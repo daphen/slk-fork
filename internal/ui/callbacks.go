@@ -82,7 +82,7 @@ type ThreadCacheReadFunc func(channelID ids.ChannelID, threadTS ids.ThreadTS) []
 type ThreadMarkFunc func(channelID ids.ChannelID, threadTS ids.ThreadTS, ts ids.MessageTS)
 
 // ThreadReplySendFunc is called when the user sends a thread reply.
-type ThreadReplySendFunc func(channelID ids.ChannelID, threadTS ids.ThreadTS, text string) tea.Msg
+type ThreadReplySendFunc func(channelID ids.ChannelID, threadTS ids.ThreadTS, text string, broadcast bool) tea.Msg
 
 // ThreadsListFetchFunc loads the involved-threads list for a workspace.
 // Returns the resulting tea.Msg (typically ThreadsListLoadedMsg).

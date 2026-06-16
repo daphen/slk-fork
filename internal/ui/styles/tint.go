@@ -66,6 +66,18 @@ func mixColors(fg, bg color.Color, alpha float64) color.Color {
 	return lipgloss.Color(rgbHex(r, g, b))
 }
 
+// contrastText returns black or white — whichever stays legible on bg.
+// Used for badge foregrounds (active workspace, mode indicator) so a
+// light theme accent gets dark text instead of unreadable white-on-light.
+func contrastText(bg color.Color) color.Color {
+	r, g, b, _ := bg.RGBA()
+	lum := (0.299*float64(r>>8) + 0.587*float64(g>>8) + 0.114*float64(b>>8)) / 255
+	if lum > 0.6 {
+		return lipgloss.Color("#000000")
+	}
+	return lipgloss.Color("#FFFFFF")
+}
+
 func rgbHex(r, g, b uint8) string {
 	const hex = "0123456789ABCDEF"
 	out := []byte("#000000")

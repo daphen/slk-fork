@@ -21,6 +21,9 @@ var (
 	TextPrimary color.Color = lipgloss.Color("#E0E0E0")
 	TextMuted   color.Color = lipgloss.Color("#888888")
 	Border      color.Color = lipgloss.Color("#333333")
+	// Focused-panel border color. Apply() falls back to Primary when the
+	// theme doesn't set border_focus, so built-in themes are unchanged.
+	BorderFocus color.Color = lipgloss.Color("#4A9EFF")
 
 	// Sidebar/rail colors (default to Background/Text/TextMuted/SurfaceDark
 	// for backwards compatibility with themes that don't set them).
@@ -44,7 +47,7 @@ var (
 	// Panel styles
 	FocusedBorder = lipgloss.NewStyle().
 			BorderStyle(lipgloss.ThickBorder()).
-			BorderForeground(Primary).
+			BorderForeground(BorderFocus).
 			BorderBackground(Background).
 			Background(Background)
 
@@ -57,7 +60,7 @@ var (
 	// Workspace rail
 	WorkspaceActive = lipgloss.NewStyle().
 			Background(Primary).
-			Foreground(lipgloss.Color("#FFFFFF")).
+			Foreground(contrastText(Primary)).
 			Bold(true).
 			Padding(0, 1).
 			Align(lipgloss.Center)
@@ -141,13 +144,13 @@ var (
 
 	StatusMode = lipgloss.NewStyle().
 			Background(Primary).
-			Foreground(lipgloss.Color("#FFFFFF")).
+			Foreground(contrastText(Primary)).
 			Bold(true).
 			Padding(0, 1)
 
 	StatusModeInsert = lipgloss.NewStyle().
 				Background(Accent).
-				Foreground(lipgloss.Color("#FFFFFF")).
+				Foreground(contrastText(Accent)).
 				Bold(true).
 				Padding(0, 1)
 
@@ -161,7 +164,7 @@ var (
 
 	StatusModeCommand = lipgloss.NewStyle().
 				Background(Warning).
-				Foreground(lipgloss.Color("#000000")).
+				Foreground(contrastText(Warning)).
 				Bold(true).
 				Padding(0, 1)
 
@@ -376,6 +379,14 @@ func Apply(themeName string, overrides config.Theme) {
 		selectionBgUnfocused = lipgloss.Color(colors.SelectionBgUnfocused)
 	}
 
+	// Focused-panel border: explicit theme override wins, else Primary
+	// (so built-in themes keep their current blue/primary border).
+	if colors.BorderFocus != "" {
+		BorderFocus = lipgloss.Color(colors.BorderFocus)
+	} else {
+		BorderFocus = Primary
+	}
+
 	buildStyles()
 }
 
@@ -394,11 +405,11 @@ func SelectionBorderColor(focused bool) color.Color {
 
 func buildStyles() {
 	FocusedBorder = lipgloss.NewStyle().
-		BorderStyle(lipgloss.ThickBorder()).BorderForeground(Primary).BorderBackground(Background).Background(Background)
+		BorderStyle(lipgloss.ThickBorder()).BorderForeground(BorderFocus).BorderBackground(Background).Background(Background)
 	UnfocusedBorder = lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).BorderForeground(Border).BorderBackground(Background).Background(Background)
 	WorkspaceActive = lipgloss.NewStyle().
-		Background(Primary).Foreground(lipgloss.Color("#FFFFFF")).
+		Background(Primary).Foreground(contrastText(Primary)).
 		Bold(true).Padding(0, 1).Align(lipgloss.Center)
 	WorkspaceInactive = lipgloss.NewStyle().
 		Background(RailBackground).Foreground(SidebarText).
@@ -426,11 +437,11 @@ func buildStyles() {
 	StatusBar = lipgloss.NewStyle().
 		Background(SurfaceDark).Foreground(TextPrimary).Padding(0, 1)
 	StatusMode = lipgloss.NewStyle().
-		Background(Primary).Foreground(lipgloss.Color("#FFFFFF")).Bold(true).Padding(0, 1)
+		Background(Primary).Foreground(contrastText(Primary)).Bold(true).Padding(0, 1)
 	StatusModeInsert = lipgloss.NewStyle().
-		Background(Accent).Foreground(lipgloss.Color("#FFFFFF")).Bold(true).Padding(0, 1)
+		Background(Accent).Foreground(contrastText(Accent)).Bold(true).Padding(0, 1)
 	StatusModeCommand = lipgloss.NewStyle().
-		Background(Warning).Foreground(lipgloss.Color("#000000")).Bold(true).Padding(0, 1)
+		Background(Warning).Foreground(contrastText(Warning)).Bold(true).Padding(0, 1)
 	StatusbarSyncing = lipgloss.NewStyle().
 		Background(SurfaceDark).Foreground(TextMuted)
 	ComposeBox = lipgloss.NewStyle().

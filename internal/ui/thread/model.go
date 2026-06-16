@@ -97,6 +97,7 @@ type Model struct {
 	focused           bool
 	avatarFn          messages.AvatarFunc
 	userNames         map[string]string
+	usergroupNames    map[string]string
 	channelNames      map[string]string
 	vp                viewport.Model
 	reactionNavActive bool
@@ -587,6 +588,13 @@ func (m *Model) SetUserNames(names map[string]string) {
 	m.InvalidateCache()
 }
 
+// SetUsergroupNames sets the subteam ID -> handle map used to resolve bare
+// <!subteam^ID> mentions that carry no embedded label.
+func (m *Model) SetUsergroupNames(names map[string]string) {
+	m.usergroupNames = names
+	m.InvalidateCache()
+}
+
 // SetCurrentUser records the authenticated user ID so UpdateReaction can
 // flag the current user's own reactions (HasReacted) correctly.
 func (m *Model) SetCurrentUser(userID string) {
@@ -698,9 +706,19 @@ func (m *Model) ViewportAtTop() bool {
 	return m.vp.YOffset() == 0
 }
 
+// overflowScrollStep is how many lines j/k scroll within a selected message
+// that's taller than the viewport before advancing to the next/prev message.
+const overflowScrollStep = 3
+
 func (m *Model) MoveUp() {
 	if m.reactionNavActive {
 		m.ExitReactionNav()
+	}
+	// If the selected reply is taller than the viewport and we've scrolled
+	// into it, scroll back up within it before moving to the previous reply.
+	if m.hasSnapped && m.selectedStartLine < m.vp.YOffset() {
+		m.ScrollUp(overflowScrollStep)
+		return
 	}
 	if m.selected > 0 {
 		m.selected--
@@ -712,6 +730,12 @@ func (m *Model) MoveUp() {
 func (m *Model) MoveDown() {
 	if m.reactionNavActive {
 		m.ExitReactionNav()
+	}
+	// If the selected reply runs past the viewport bottom, scroll within it
+	// first so j reveals the rest before jumping to the next reply.
+	if m.hasSnapped && m.selectedEndLine > m.vp.YOffset()+m.vp.Height() {
+		m.ScrollDown(overflowScrollStep)
+		return
 	}
 	if m.selected < len(m.replies)-1 {
 		m.selected++
@@ -1753,12 +1777,13 @@ func (m *Model) blockkitContext(msg messages.MessageItem, userNames, channelName
 		Channel:     m.channelID,
 		RenderText: func(s string, un map[string]string) string {
 			return messages.RenderSlackMarkdownWith(s, messages.RenderSlackMarkdownOpts{
-				UserNames:    un,
-				ChannelNames: channelNames,
-				PlaceCtx:     m.emojiCtx.PlaceCtx,
-				EmojiCells:   m.emojiCtx.Cells,
-				Customs:      m.emojiCtx.Customs,
-				EmojiFlushes: nil,
+				UserNames:      un,
+				ChannelNames:   channelNames,
+				UsergroupNames: m.usergroupNames,
+				PlaceCtx:       m.emojiCtx.PlaceCtx,
+				EmojiCells:     m.emojiCtx.Cells,
+				Customs:        m.emojiCtx.Customs,
+				EmojiFlushes:   nil,
 			})
 		},
 		WrapText: messages.WordWrap,
@@ -1784,12 +1809,13 @@ func (m *Model) renderThreadMessage(msg messages.MessageItem, width int, userNam
 	// Mirrors the messages-pane named-return `flushes` slice.
 	var flushes []func(io.Writer) error
 	bodyOpts := messages.RenderSlackMarkdownOpts{
-		UserNames:    userNames,
-		ChannelNames: channelNames,
-		PlaceCtx:     m.emojiCtx.PlaceCtx,
-		EmojiCells:   m.emojiCtx.Cells,
-		Customs:      m.emojiCtx.Customs,
-		EmojiFlushes: &flushes,
+		UserNames:      userNames,
+		ChannelNames:   channelNames,
+		UsergroupNames: m.usergroupNames,
+		PlaceCtx:       m.emojiCtx.PlaceCtx,
+		EmojiCells:     m.emojiCtx.Cells,
+		Customs:        m.emojiCtx.Customs,
+		EmojiFlushes:   &flushes,
 	}
 	text := styles.MessageText.Render(messages.WordWrap(messages.RenderSlackMarkdownWith(messages.MessageTextSource(msg), bodyOpts), contentWidth))
 

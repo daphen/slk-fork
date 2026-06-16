@@ -228,6 +228,12 @@ func reduceNewMessage(a *App, m NewMessageMsg) tea.Cmd {
 	// and scheduled side effects; redoing them here would
 	// double-render.
 	if a.selfSend.IsSelfSent(m.Message.TS) {
+		// A broadcast's optimistic add went to the thread panel only, so the
+		// channel pane still needs this echo — otherwise a broadcast you sent
+		// doesn't appear in the channel until you re-enter it.
+		if m.Message.Subtype == "thread_broadcast" && m.ChannelID == a.activeChannelID {
+			a.messagepane.AppendMessage(m.Message)
+		}
 		debuglog.Cache("NewMessageMsg: channel=%s ts=%s decision=skipped_self_send",
 			m.ChannelID, m.Message.TS)
 		return nil
@@ -245,6 +251,9 @@ func reduceNewMessage(a *App, m NewMessageMsg) tea.Cmd {
 	// Slack client while slk is open) do NOT update
 	// lastSelfSendByChannel, so they pass through this guard.
 	if m.Message.UserID != "" && m.Message.UserID == a.currentUserID && a.selfSend.InFlight(m.ChannelID) {
+		if m.Message.Subtype == "thread_broadcast" && m.ChannelID == a.activeChannelID {
+			a.messagepane.AppendMessage(m.Message)
+		}
 		debuglog.Cache("NewMessageMsg: channel=%s ts=%s decision=skipped_self_send_in_flight",
 			m.ChannelID, m.Message.TS)
 		return nil
@@ -261,9 +270,10 @@ func reduceNewMessage(a *App, m NewMessageMsg) tea.Cmd {
 		if a.threadVisible && m.Message.ThreadTS == a.threadPanel.ThreadTS() {
 			a.threadPanel.AddReply(m.Message)
 		}
-		// Always add to main pane if it's a top-level message (no
-		// ThreadTS or is the parent).
-		if m.Message.ThreadTS == "" || m.Message.ThreadTS == m.Message.TS {
+		// Add to main pane if it's a top-level message (no ThreadTS or is
+		// the parent), or a thread_broadcast — a reply the author also
+		// posted to the channel, so it belongs in the channel pane too.
+		if m.Message.ThreadTS == "" || m.Message.ThreadTS == m.Message.TS || m.Message.Subtype == "thread_broadcast" {
 			a.messagepane.AppendMessage(m.Message)
 		}
 		// Update reply count on parent message when a thread reply

@@ -132,6 +132,7 @@ type (
 		ChannelID string
 		ThreadTS  string
 		Text      string
+		Broadcast bool
 	}
 	ThreadReplySentMsg struct {
 		ChannelID string
@@ -237,9 +238,10 @@ type (
 		Domain       string
 		Theme        string // resolved theme name (per-workspace or global default)
 		SidebarWidth int    // resolved sidebar width (per-workspace or global default)
-		Channels     []sidebar.ChannelItem
-		FinderItems  []channelfinder.Item
-		UserNames    map[string]string
+		Channels       []sidebar.ChannelItem
+		FinderItems    []channelfinder.Item
+		UserNames      map[string]string
+		UsergroupNames map[string]string
 		// ExternalUsers maps userID -> true for users this workspace
 		// considers Slack Connect / shared-channel guests. Hydrated from
 		// cache.User.IsExternal so the mention picker can flag externals
@@ -304,6 +306,7 @@ type (
 		Channels     []sidebar.ChannelItem
 		FinderItems  []channelfinder.Item
 		UserNames    map[string]string
+		UsergroupNames map[string]string
 		// ExternalUsers maps userID -> true for users this workspace
 		// considers Slack Connect / shared-channel guests. Hydrated from
 		// cache.User.IsExternal so the mention picker can flag externals

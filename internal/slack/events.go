@@ -137,11 +137,15 @@ type wsReactionEvent struct {
 	} `json:"item"`
 }
 
-// wsPresenceEvent represents a presence_change event.
+// wsPresenceEvent represents a presence_change event. With
+// batch_presence_aware set on the socket (see the WS URL), Slack
+// coalesces presence updates into a `users` array rather than a single
+// `user`, so both forms must be handled.
 type wsPresenceEvent struct {
-	Type     string `json:"type"`
-	User     string `json:"user"`
-	Presence string `json:"presence"`
+	Type     string   `json:"type"`
+	User     string   `json:"user"`
+	Users    []string `json:"users"`
+	Presence string   `json:"presence"`
 }
 
 // wsTypingEvent represents a user_typing event.
@@ -327,7 +331,14 @@ func dispatchWebSocketEvent(data []byte, handler EventHandler) {
 		if err := json.Unmarshal(data, &evt); err != nil {
 			return
 		}
-		handler.OnPresenceChange(evt.User, evt.Presence)
+		debuglog.WS("presence_change: user=%q users=%v presence=%q", evt.User, evt.Users, evt.Presence)
+		if len(evt.Users) > 0 {
+			for _, u := range evt.Users {
+				handler.OnPresenceChange(u, evt.Presence)
+			}
+		} else if evt.User != "" {
+			handler.OnPresenceChange(evt.User, evt.Presence)
+		}
 
 	case "manual_presence_change":
 		var evt wsManualPresenceEvent

@@ -110,8 +110,11 @@ func handleInsertMode(a *App, msg tea.KeyMsg) tea.Cmd {
 	}
 
 	code := msg.Key().Code
-	mod := msg.Key().Mod
-	isPaste := code == 'v' && mod == tea.ModCtrl
+	// Strip lock-key state (NumLock/CapsLock/ScrollLock) the kitty keyboard
+	// protocol reports in the modifier mask — otherwise e.g. Ctrl+V with
+	// NumLock on arrives as Ctrl|NumLock and no shortcut check matches.
+	mod := msg.Key().Mod &^ (tea.ModNumLock | tea.ModCapsLock | tea.ModScrollLock)
+	isPaste := code == 'v' && mod.Contains(tea.ModCtrl)
 	if isPaste {
 		return a.smartPaste()
 	}
@@ -124,7 +127,7 @@ func handleInsertMode(a *App, msg tea.KeyMsg) tea.Cmd {
 	if a.focusedPanel == PanelThread && a.threadVisible {
 		target = &a.threadCompose
 	}
-	if code == 'u' && mod == tea.ModCtrl {
+	if code == 'u' && mod.Contains(tea.ModCtrl) {
 		target.Reset()
 		return nil
 	}
@@ -149,7 +152,7 @@ func handleInsertMode(a *App, msg tea.KeyMsg) tea.Cmd {
 	// newline.
 	isSend := code == tea.KeyEnter && !mod.Contains(tea.ModShift)
 	isNewline := (code == tea.KeyEnter && mod.Contains(tea.ModShift)) ||
-		(code == 'j' && mod == tea.ModCtrl)
+		(code == 'j' && mod.Contains(tea.ModCtrl))
 
 	// Determine which compose box is active based on focused panel.
 	if a.focusedPanel == PanelThread && a.threadVisible {
@@ -159,6 +162,11 @@ func handleInsertMode(a *App, msg tea.KeyMsg) tea.Cmd {
 			var cmd tea.Cmd
 			a.threadCompose, cmd = a.threadCompose.Update(msg)
 			return cmd
+		}
+
+		if code == 'b' && mod.Contains(tea.ModCtrl) {
+			a.threadBroadcast = !a.threadBroadcast
+			return nil
 		}
 
 		// Thread reply compose.
@@ -185,11 +193,16 @@ func handleInsertMode(a *App, msg tea.KeyMsg) tea.Cmd {
 				threadTS := a.threadPanel.ThreadTS()
 				channelID := a.threadPanel.ChannelID()
 				a.exitInsertAfterSend()
+				// Ctrl+Enter sends and broadcasts to the channel in one
+				// shot; the Ctrl+B toggle does the same as a sticky state.
+				broadcast := a.threadBroadcast || mod.Contains(tea.ModCtrl)
+				a.threadBroadcast = false
 				return func() tea.Msg {
 					return SendThreadReplyMsg{
 						ChannelID: channelID,
 						ThreadTS:  threadTS,
 						Text:      text,
+						Broadcast: broadcast,
 					}
 				}
 			}

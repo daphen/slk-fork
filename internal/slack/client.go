@@ -42,6 +42,7 @@ type SlackAPI interface {
 	JoinConversation(channelID string) (*slack.Channel, string, []string, error)
 	SetUserPresenceContext(ctx context.Context, presence string) error
 	GetUserPresenceContext(ctx context.Context, user string) (*slack.UserPresence, error)
+	GetUserGroupsContext(ctx context.Context, options ...slack.GetUserGroupsOption) ([]slack.UserGroup, error)
 	SetSnoozeContext(ctx context.Context, minutes int) (*slack.DNDStatus, error)
 	EndSnoozeContext(ctx context.Context) (*slack.DNDStatus, error)
 	EndDNDContext(ctx context.Context) error
@@ -345,6 +346,23 @@ func (c *Client) SubscribePresence(userIDs []string) error {
 	}
 	msg := map[string]interface{}{
 		"type": "presence_sub",
+		"ids":  userIDs,
+	}
+	return c.wsConn.WriteJSON(msg)
+}
+
+// QueryPresence asks Slack for the current presence of the given users.
+// The socket is opened with no_query_on_subscribe=1, so presence_sub
+// alone never returns initial state — only later changes. The reply
+// arrives as presence_change events (batched when batch_presence_aware).
+func (c *Client) QueryPresence(userIDs []string) error {
+	c.wsMu.Lock()
+	defer c.wsMu.Unlock()
+	if c.wsConn == nil {
+		return fmt.Errorf("websocket not connected")
+	}
+	msg := map[string]interface{}{
+		"type": "presence_query",
 		"ids":  userIDs,
 	}
 	return c.wsConn.WriteJSON(msg)
@@ -963,7 +981,7 @@ func (c *Client) GetUnreadCounts() ([]UnreadInfo, ThreadsAggregate, error) {
 
 // SendReply posts a threaded reply to the specified message.
 // Returns the timestamp and the converted mrkdwn text actually sent.
-func (c *Client) SendReply(ctx context.Context, channelID, threadTS, text string) (string, string, error) {
+func (c *Client) SendReply(ctx context.Context, channelID, threadTS, text string, broadcast bool) (string, string, error) {
 	mr, block := mrkdwn.Convert(text)
 	opts := []slack.MsgOption{
 		slack.MsgOptionText(mr, false),
@@ -972,11 +990,35 @@ func (c *Client) SendReply(ctx context.Context, channelID, threadTS, text string
 	if block != nil {
 		opts = append(opts, slack.MsgOptionBlocks(block))
 	}
+	if broadcast {
+		opts = append(opts, slack.MsgOptionBroadcast())
+	}
 	_, ts, err := c.api.PostMessage(channelID, opts...)
 	if err != nil {
 		return "", "", fmt.Errorf("sending reply: %w", err)
 	}
 	return ts, mr, nil
+}
+
+// GetUsergroups returns a map of usergroup (subteam) ID -> handle, used to
+// resolve bare <!subteam^ID> mentions (which carry no embedded label) to a
+// readable @handle. Falls back to the group's name when it has no handle.
+func (c *Client) GetUsergroups(ctx context.Context) (map[string]string, error) {
+	groups, err := c.api.GetUserGroupsContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fetching usergroups: %w", err)
+	}
+	out := make(map[string]string, len(groups))
+	for _, g := range groups {
+		name := g.Handle
+		if name == "" {
+			name = g.Name
+		}
+		if name != "" {
+			out[g.ID] = name
+		}
+	}
+	return out, nil
 }
 
 // GetReplies retrieves all replies in a thread.

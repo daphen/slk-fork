@@ -205,8 +205,9 @@ var reduceThreads reducerFunc = func(a *App, msg tea.Msg) (tea.Cmd, bool) {
 		chID := ids.ChannelID(m.ChannelID)
 		ts := ids.ThreadTS(m.ThreadTS)
 		text := m.Text
+		broadcast := m.Broadcast
 		return func() tea.Msg {
-			result := threads.SendReply(chID, ts, text)
+			result := threads.SendReply(chID, ts, text, broadcast)
 			switch r := result.(type) {
 			case ThreadReplySentMsg:
 				r.LocalTS = localTS

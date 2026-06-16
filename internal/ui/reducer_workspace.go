@@ -192,6 +192,7 @@ func reduceWorkspaceReady(a *App, m WorkspaceReadyMsg) tea.Cmd {
 		// SetUserNames last is the canonical state.
 		a.SetExternalUsers(m.ExternalUsers)
 		a.SetUserNames(m.UserNames)
+		a.SetUsergroupNames(m.UsergroupNames)
 		a.SetCustomEmoji(m.CustomEmoji)
 		// Route through the setter so messagepane/threadPanel also learn
 		// the current user — production never calls SetCurrentUserID
@@ -281,6 +282,7 @@ func reduceWorkspaceSwitched(a *App, m WorkspaceSwitchedMsg) tea.Cmd {
 	// last is the canonical state.
 	a.SetExternalUsers(m.ExternalUsers)
 	a.SetUserNames(m.UserNames)
+		a.SetUsergroupNames(m.UsergroupNames)
 	a.SetCustomEmoji(m.CustomEmoji)
 	// Route through the setter so messagepane/threadPanel also learn the
 	// current user (see WorkspaceReadyMsg above).

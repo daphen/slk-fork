@@ -4,25 +4,62 @@ package notify
 import (
 	"regexp"
 	"strings"
+	"sync"
 
+	enotify "github.com/esiqveland/notify"
 	"github.com/gen2brain/beeep"
+	"github.com/godbus/dbus/v5"
 )
 
 // Notifier sends OS-level desktop notifications.
 type Notifier struct {
 	enabled bool
+	conn    *dbus.Conn
+
+	mu     sync.Mutex
+	lastID map[string]uint32 // group key (channel) -> last notification id
 }
 
 // New creates a Notifier. If enabled is false, Notify is a no-op.
 func New(enabled bool) *Notifier {
-	return &Notifier{enabled: enabled}
+	n := &Notifier{enabled: enabled, lastID: map[string]uint32{}}
+	if enabled {
+		// Own session-bus connection so notifications carry AppName "slk".
+		// beeep hardcodes "DefaultAppName", which downstream consumers (e.g.
+		// a bar's per-app notification badge) can't attribute to slk. Fall
+		// back to beeep if the session bus isn't reachable.
+		if conn, err := dbus.SessionBus(); err == nil {
+			n.conn = conn
+		}
+	}
+	return n
 }
 
-// Notify sends a desktop notification with the given title and body.
-// Returns nil if notifications are disabled.
-func (n *Notifier) Notify(title, body string) error {
+// Notify sends a desktop notification. key groups notifications by
+// conversation: a new message for the same key replaces the prior
+// notification in place (via ReplacesID) so the tray shows the latest
+// message rather than piling up stale ones. Returns nil if disabled.
+func (n *Notifier) Notify(key, title, body string) error {
 	if !n.enabled {
 		return nil
+	}
+	if n.conn != nil {
+		n.mu.Lock()
+		replaces := n.lastID[key]
+		n.mu.Unlock()
+		id, err := enotify.SendNotification(n.conn, enotify.Notification{
+			AppName:       "slk",
+			ReplacesID:    replaces,
+			Summary:       title,
+			Body:          body,
+			ExpireTimeout: enotify.ExpireTimeoutSetByNotificationServer,
+		})
+		if err == nil {
+			n.mu.Lock()
+			n.lastID[key] = id
+			n.mu.Unlock()
+		}
+		return err
 	}
 	return beeep.Notify(title, body, "")
 }
@@ -34,8 +71,16 @@ type NotifyContext struct {
 	IsActiveWS      bool
 	OnMention       bool
 	OnDM            bool
+	OnThread        bool
 	OnKeyword       []string
+	NotifyChannels  []string
 	IsDND           bool // when true, ShouldNotify always returns false
+
+	// ChannelName is the human channel name, matched against NotifyChannels.
+	ChannelName string
+	// ThreadFollowed is true when this message is a reply in a thread the
+	// user participates in (authored or was mentioned). Set by the caller.
+	ThreadFollowed bool
 }
 
 // ShouldNotify returns true if a message should trigger a desktop notification.
@@ -55,14 +100,31 @@ func ShouldNotify(ctx NotifyContext, channelID, userID, text, channelType string
 		return false
 	}
 
-	// Check DM trigger
-	if ctx.OnDM && (channelType == "dm" || channelType == "group_dm") {
+	// Check DM trigger. "app" covers bot/app DMs (Swarmia, GitHub, …),
+	// which are still direct messages the user wants surfaced.
+	if ctx.OnDM && (channelType == "dm" || channelType == "group_dm" || channelType == "app") {
+		return true
+	}
+
+	// Check thread trigger: a reply in a thread the user participates in.
+	if ctx.OnThread && ctx.ThreadFollowed {
 		return true
 	}
 
 	// Check mention trigger
 	if ctx.OnMention && strings.Contains(text, "<@"+ctx.CurrentUserID+">") {
 		return true
+	}
+
+	// Watched channels: notify on any message in a channel whose name
+	// matches one of NotifyChannels (case-insensitive substring).
+	if ctx.ChannelName != "" && len(ctx.NotifyChannels) > 0 {
+		lname := strings.ToLower(ctx.ChannelName)
+		for _, pat := range ctx.NotifyChannels {
+			if pat != "" && strings.Contains(lname, strings.ToLower(pat)) {
+				return true
+			}
+		}
 	}
 
 	// Check keyword triggers

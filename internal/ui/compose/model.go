@@ -539,11 +539,11 @@ func (m *Model) autoGrow() {
 func (m Model) handleMentionKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	k := msg.Key()
 	switch {
-	case k.Code == tea.KeyUp || (k.Code == 'p' && k.Mod == tea.ModCtrl):
+	case k.Code == tea.KeyUp || (k.Code == 'p' && k.Mod.Contains(tea.ModCtrl)):
 		m.mentionPicker.MoveUp()
 		return m, nil
 
-	case k.Code == tea.KeyDown || (k.Code == 'n' && k.Mod == tea.ModCtrl):
+	case k.Code == tea.KeyDown || (k.Code == 'n' && k.Mod.Contains(tea.ModCtrl)):
 		m.mentionPicker.MoveDown()
 		return m, nil
 
@@ -632,11 +632,11 @@ func (m *Model) insertMention(result *mentionpicker.MentionResult) {
 func (m Model) handleChannelKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	k := msg.Key()
 	switch {
-	case k.Code == tea.KeyUp || (k.Code == 'p' && k.Mod == tea.ModCtrl):
+	case k.Code == tea.KeyUp || (k.Code == 'p' && k.Mod.Contains(tea.ModCtrl)):
 		m.channelPicker.MoveUp()
 		return m, nil
 
-	case k.Code == tea.KeyDown || (k.Code == 'n' && k.Mod == tea.ModCtrl):
+	case k.Code == tea.KeyDown || (k.Code == 'n' && k.Mod.Contains(tea.ModCtrl)):
 		m.channelPicker.MoveDown()
 		return m, nil
 
@@ -1056,11 +1056,11 @@ func (m *Model) maybeOpenEmojiPicker() {
 func (m Model) handleEmojiKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	k := msg.Key()
 	switch {
-	case k.Code == tea.KeyUp || (k.Code == 'p' && k.Mod == tea.ModCtrl):
+	case k.Code == tea.KeyUp || (k.Code == 'p' && k.Mod.Contains(tea.ModCtrl)):
 		m.emojiPicker.MoveUp()
 		return m, nil
 
-	case k.Code == tea.KeyDown || (k.Code == 'n' && k.Mod == tea.ModCtrl):
+	case k.Code == tea.KeyDown || (k.Code == 'n' && k.Mod.Contains(tea.ModCtrl)):
 		m.emojiPicker.MoveDown()
 		return m, nil
 

@@ -110,8 +110,13 @@ type Notifications struct {
 	Enabled    bool     `toml:"enabled"`
 	OnMention  bool     `toml:"on_mention"`
 	OnDM       bool     `toml:"on_dm"`
+	OnThread   bool     `toml:"on_thread"`
 	OnKeyword  []string `toml:"on_keyword"`
-	QuietHours string   `toml:"quiet_hours"`
+	// NotifyChannels: notify on ANY message in a channel whose name
+	// contains one of these (case-insensitive substring), regardless of
+	// mention. e.g. ["design-system"] catches design-system(s) channels.
+	NotifyChannels []string `toml:"notify_channels"`
+	QuietHours     string   `toml:"quiet_hours"`
 }
 
 type CacheConfig struct {
@@ -189,6 +194,7 @@ func Default() Config {
 			Enabled:   true,
 			OnMention: true,
 			OnDM:      true,
+			OnThread:  true,
 		},
 		Cache: CacheConfig{
 			MessageRetentionDays: 30,

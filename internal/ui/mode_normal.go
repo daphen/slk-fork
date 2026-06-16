@@ -243,6 +243,9 @@ func handleNormalMode(a *App, msg tea.KeyMsg) tea.Cmd {
 	case key.Matches(msg, a.keys.CopyPermalink):
 		return a.copyPermalinkOfSelected()
 
+	case key.Matches(msg, a.keys.Yank):
+		return a.copySelectedMessage()
+
 	case key.Matches(msg, a.keys.Edit):
 		return a.beginEditOfSelected()
 

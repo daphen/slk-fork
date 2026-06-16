@@ -107,6 +107,10 @@ type App struct {
 	focusedPanel   Panel
 	sidebarVisible bool
 	threadVisible  bool
+	// threadBroadcast, when set, posts the next thread reply to the
+	// parent channel too (Slack reply_broadcast). Toggled with Ctrl+B
+	// in the thread composer; reset on thread open and after a send.
+	threadBroadcast bool
 	view           View
 	width          int
 	height         int
@@ -576,6 +580,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) handleKey(msg tea.KeyMsg) tea.Cmd {
+	if debuglog.Enabled() {
+		debuglog.General("key: str=%q code=%d mod=%d mode=%v panel=%d", msg.String(), msg.Key().Code, msg.Key().Mod, a.mode, a.focusedPanel)
+	}
 	// Ctrl+C is intercepted globally and routed through the same
 	// confirm prompt as lowercase `q`, so an accidental Ctrl+C while
 	// reading or typing doesn't yank the whole app out from under the
@@ -928,6 +935,38 @@ func (a *App) copyPermalinkOfSelected() tea.Cmd {
 	}
 }
 
+// copySelectedMessage implements the `y` keybinding: copy the selected
+// message's author and text to the clipboard (messages pane or thread).
+func (a *App) copySelectedMessage() tea.Cmd {
+	var userID, userName, text string
+	switch a.focusedPanel {
+	case PanelMessages:
+		msg, ok := a.messagepane.SelectedMessage()
+		if !ok {
+			return nil
+		}
+		userID, userName, text = msg.UserID, msg.UserName, msg.Text
+	case PanelThread:
+		reply := a.threadPanel.SelectedReply()
+		if reply == nil {
+			return nil
+		}
+		userID, userName, text = reply.UserID, reply.UserName, reply.Text
+	default:
+		return nil
+	}
+	if text == "" {
+		return nil
+	}
+	if userName == "" {
+		userName = a.userNameFor(userID)
+	}
+	return tea.Batch(
+		tea.SetClipboard(userName+": "+text),
+		a.uploadToastCmd("Copied message", 2*time.Second),
+	)
+}
+
 // openLinksOfSelected implements the `o` keybinding: collect the
 // links in the selected message (messages pane or thread panel).
 // 0 links -> toast; 1 link -> dispatch OpenLinkMsg directly; 2+ ->
@@ -1250,10 +1289,15 @@ func (a *App) scrollFocusedPanel(delta int) tea.Cmd {
 	}
 	switch a.focusedPanel {
 	case PanelSidebar:
-		if delta < 0 {
-			a.sidebar.ScrollUp(n)
-		} else {
-			a.sidebar.ScrollDown(n)
+		// Half/full-page keys move the selection (the viewport snaps to
+		// follow) rather than scrolling the viewport independently of the
+		// cursor, so a following j/k doesn't jump back to the old position.
+		for i := 0; i < n; i++ {
+			if delta < 0 {
+				a.sidebar.MoveUp()
+			} else {
+				a.sidebar.MoveDown()
+			}
 		}
 	case PanelMessages:
 		if a.view == ViewThreads {
@@ -1397,6 +1441,7 @@ func (a *App) openThreadForSelectedMessage() tea.Cmd {
 // and openThreadForPermalink (parent reconstructed from cache/stub).
 func (a *App) openThreadPanel(parent messages.MessageItem, channelID, threadTS string) tea.Cmd {
 	a.threadVisible = true
+	a.threadBroadcast = false
 	a.statusbar.SetInThread(true)
 	a.focusedPanel = PanelThread
 	a.threadPanel.SetThread(parent, nil, channelID, threadTS)
@@ -1557,6 +1602,7 @@ func (a *App) openSelectedThreadCmd(debounce bool) tea.Cmd {
 	a.lastOpenedChannelID = sum.ChannelID
 	a.lastOpenedThreadTS = sum.ThreadTS
 	a.threadVisible = true
+	a.threadBroadcast = false
 	a.statusbar.SetInThread(true)
 	parent := messages.MessageItem{
 		TS:       sum.ParentTS,
@@ -2094,6 +2140,13 @@ func openURLCmd(url string) tea.Cmd {
 	}
 }
 
+// SetUsergroupNames passes the subteam ID -> handle map to the panes so
+// bare <!subteam^ID> mentions resolve to @handle.
+func (a *App) SetUsergroupNames(names map[string]string) {
+	a.messagepane.SetUsergroupNames(names)
+	a.threadPanel.SetUsergroupNames(names)
+}
+
 // SetUserNames passes the user ID -> display name map to the message pane for mention resolution.
 func (a *App) SetUserNames(names map[string]string) {
 	a.userNames = names
@@ -2616,7 +2669,7 @@ func (a *App) submitWithAttachments(c *compose.Model) tea.Cmd {
 // No-op if clipboard.Init() failed at startup.
 func (a *App) smartPaste() tea.Cmd {
 	if !a.clipboardAvailable {
-		return nil
+		return a.uploadToastCmd("Clipboard unavailable — install wl-clipboard", 3*time.Second)
 	}
 
 	// Resolve the active compose pointer.
@@ -2633,8 +2686,12 @@ func (a *App) smartPaste() tea.Cmd {
 	// Text fallback — paste verbatim into the active compose.
 	if len(textBytes) > 0 {
 		target.SetValue(target.Value() + string(textBytes))
+		return nil
 	}
-	return nil
+
+	// Nothing matched (no image, no file path, no text) — toast so an
+	// empty Ctrl+V isn't a silent no-op.
+	return a.uploadToastCmd("Nothing to paste — no image or file on clipboard", 2*time.Second)
 }
 
 // tryAttachFromClipboard inspects the OS clipboard for an image and the

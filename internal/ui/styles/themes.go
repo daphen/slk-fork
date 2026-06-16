@@ -43,6 +43,9 @@ type ThemeColors struct {
 	ComposeInsertBG      string `toml:"compose_insert_bg"`
 	SelectionBgFocused   string `toml:"selection_bg_focused"`
 	SelectionBgUnfocused string `toml:"selection_bg_unfocused"`
+	// BorderFocus overrides the focused-panel border color; falls back to
+	// Primary when empty.
+	BorderFocus string `toml:"border_focus"`
 }
 
 // builtinThemes maps lowercase theme names to their display name and colors.

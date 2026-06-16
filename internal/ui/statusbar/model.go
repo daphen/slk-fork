@@ -288,7 +288,7 @@ func (m Model) View(width int) string {
 	// dark terminal running a light slk theme, which previously left a stray
 	// dark cell between segments).
 	sep := lipgloss.NewStyle().Background(styles.SurfaceDark).Render(" ")
-	trailing := lipgloss.NewStyle().Background(styles.SurfaceDark).Render("  ")
+	trailing := lipgloss.NewStyle().Background(styles.SurfaceDark).Render("      ")
 
 	rightContent := ""
 	for i, p := range rightParts {

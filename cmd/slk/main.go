@@ -103,6 +103,9 @@ type WorkspaceContext struct {
 	ConnMgr    *slackclient.ConnectionManager
 	RTMHandler *rtmEventHandler
 	UserNames  map[string]string
+	// UsergroupNames maps subteam ID -> handle, for resolving bare
+	// <!subteam^ID> mentions that carry no embedded label.
+	UsergroupNames map[string]string
 	// AvatarURLs maps userID -> avatar image URL. Populated from the
 	// local users cache at connect time (synchronous, before any
 	// goroutines spin up) and refreshed from the background
@@ -1369,7 +1372,7 @@ func run() error {
 					}
 				}()
 			},
-			SendReply: func(channelID ids.ChannelID, threadTS ids.ThreadTS, text string) tea.Msg {
+			SendReply: func(channelID ids.ChannelID, threadTS ids.ThreadTS, text string, broadcast bool) tea.Msg {
 				chIDStr, threadTSStr := string(channelID), string(threadTS)
 				wctx := router.Active()
 				if wctx == nil {
@@ -1378,7 +1381,7 @@ func run() error {
 				client := wctx.Client
 				userNames := wctx.UserNames
 				ctx := context.Background()
-				ts, sentMrkdwn, err := client.SendReply(ctx, chIDStr, threadTSStr, text)
+				ts, sentMrkdwn, err := client.SendReply(ctx, chIDStr, threadTSStr, text, broadcast)
 				if err != nil {
 					log.Printf("Warning: failed to send thread reply: %v", err)
 					return ui.ThreadReplySendFailedMsg{ChannelID: chIDStr, ThreadTS: threadTSStr, Reason: err.Error()}
@@ -1525,6 +1528,7 @@ func run() error {
 			Channels:         wctx.Channels,
 			FinderItems:      wctx.FinderItems,
 			UserNames:        wctx.UserNames,
+			UsergroupNames:   wctx.UsergroupNames,
 			ExternalUsers:    external,
 			UserID:           wctx.UserID,
 			CustomEmoji:      wctx.CustomEmoji,
@@ -1679,6 +1683,7 @@ func run() error {
 				Channels:         wctx.Channels,
 				FinderItems:      wctx.FinderItems,
 				UserNames:        wctx.UserNames,
+				UsergroupNames:   wctx.UsergroupNames,
 				ExternalUsers:    external,
 				UserID:           wctx.UserID,
 				CustomEmoji:      wctx.CustomEmoji, // empty at this point; filled by the goroutine below
@@ -1955,11 +1960,23 @@ func connectWorkspace(ctx context.Context, token slackclient.Token, db *cache.DB
 		return nil, fmt.Errorf("fetching channels for %s: %w", token.TeamName, err)
 	}
 
+	// Usergroup (subteam) handles for resolving bare <!subteam^ID> mentions.
+	// Best-effort: a failure just leaves those mentions as @group.
+	if ug, ugErr := client.GetUsergroups(ctx); ugErr == nil {
+		wctx.UsergroupNames = ug
+	} else {
+		log.Printf("Warning: fetching usergroups for %s: %v", token.TeamName, ugErr)
+	}
+
+	var dmUserIDs []string
 	for _, ch := range channels {
 		item, finderItem := buildChannelItem(ch, wctx, cfg, client.TeamID())
 		upsertChannelInDB(db, ch, item.Type, client.TeamID())
 
 		if ch.IsIM {
+			if ch.User != "" {
+				dmUserIDs = append(dmUserIDs, ch.User)
+			}
 			if _, ok := wctx.UserNames[ch.User]; !ok {
 				wctx.UnresolvedDMs = append(wctx.UnresolvedDMs, UnresolvedDM{
 					ChannelID: ch.ID,
@@ -1974,6 +1991,21 @@ func connectWorkspace(ctx context.Context, token slackclient.Token, db *cache.DB
 		wctx.Channels = append(wctx.Channels, item)
 		finderItem.LastVisited = wctx.LastVisitedByChannel[ch.ID]
 		wctx.FinderItems = append(wctx.FinderItems, finderItem)
+	}
+
+	// Subscribe to DM peers' presence so the sidebar online/away dots
+	// reflect real status. Slack only pushes presence_change for
+	// explicitly-subscribed users; previously only the self user was
+	// subscribed, so every peer rendered as away (hollow dot).
+	if len(dmUserIDs) > 0 {
+		if err := client.SubscribePresence(dmUserIDs); err != nil {
+			log.Printf("Warning: DM presence subscribe for %s: %v", token.TeamName, err)
+		}
+		// no_query_on_subscribe=1 on the socket means the sub above never
+		// returns current state — query it explicitly so dots start correct.
+		if err := client.QueryPresence(dmUserIDs); err != nil {
+			log.Printf("Warning: DM presence query for %s: %v", token.TeamName, err)
+		}
 	}
 
 	// Fetch unread counts
@@ -3261,16 +3293,29 @@ func (h *rtmEventHandler) OnMessage(channelID, userID, ts, text, threadTS, subty
 		if h.activeChannelID != nil {
 			activeChID = h.activeChannelID()
 		}
+		chType := h.channelTypes[channelID]
+		chName := h.channelNames[channelID]
+		// Thread participation: only query when it's actually a reply and
+		// the trigger is on, to avoid a DB hit on every message.
+		threadFollowed := false
+		if h.notifyCfg.OnThread && threadTS != "" && threadTS != ts && h.db != nil {
+			if involved, err := h.db.ThreadInvolvesUser(h.workspaceID, channelID, threadTS, h.currentUserID); err == nil {
+				threadFollowed = involved
+			}
+		}
 		ctx := notify.NotifyContext{
 			CurrentUserID:   h.currentUserID,
 			ActiveChannelID: activeChID,
 			IsActiveWS:      isActiveWS,
 			OnMention:       h.notifyCfg.OnMention,
 			OnDM:            h.notifyCfg.OnDM,
+			OnThread:        h.notifyCfg.OnThread,
 			OnKeyword:       h.notifyCfg.OnKeyword,
+			NotifyChannels:  h.notifyCfg.NotifyChannels,
 			IsDND:           h.wsCtx != nil && h.wsCtx.DNDEnabled && (h.wsCtx.DNDEndTS.IsZero() || time.Now().Before(h.wsCtx.DNDEndTS)),
+			ChannelName:     chName,
+			ThreadFollowed:  threadFollowed,
 		}
-		chType := h.channelTypes[channelID]
 		// Pass the raw userID (not authorID): ShouldNotify's self-message
 		// suppression keys on the human sender, and a bot message
 		// (userID == "", authorID == botID) can never be "you" — so the
@@ -3282,13 +3327,15 @@ func (h *rtmEventHandler) OnMessage(channelID, userID, ts, text, threadTS, subty
 			} else if username != "" {
 				senderName = username
 			}
-			chName := h.channelNames[channelID]
 			title := h.workspaceName + ": #" + chName
 			if chType == "dm" || chType == "group_dm" {
 				title = h.workspaceName + ": " + senderName
 			}
 			body := senderName + ": " + notify.StripSlackMarkup(text, h.userNames)
-			go h.notifier.Notify(title, body)
+			// Group by channel so successive messages from the same
+			// conversation replace the prior notification (latest message
+			// shown) instead of stacking stale ones.
+			go h.notifier.Notify(channelID, title, body)
 		}
 	}
 

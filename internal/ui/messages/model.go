@@ -229,7 +229,8 @@ type Model struct {
 	loading      bool
 	spinnerFrame int               // braille-spinner frame index for "Loading messages..." animation
 	avatarFn     AvatarFunc        // optional: returns half-block avatar for a userID
-	userNames    map[string]string // user ID -> display name for mention resolution
+	userNames      map[string]string // user ID -> display name for mention resolution
+	usergroupNames map[string]string // subteam ID -> handle for bare <!subteam^ID>
 	channelNames map[string]string // channel ID -> name for bare <#CID> resolution
 
 	// searchTerms are folded word-prefix terms of the active in-channel
@@ -883,9 +884,19 @@ func (m *Model) LastHitsForTest() []HitRect {
 	return out
 }
 
+// overflowScrollStep is how many lines j/k scroll within a selected message
+// that's taller than the viewport before advancing to the next/prev message.
+const overflowScrollStep = 3
+
 func (m *Model) MoveUp() {
 	if m.reactionNavActive {
 		m.ExitReactionNav()
+	}
+	// If the selected message is taller than the viewport and we've scrolled
+	// into it, scroll back up within it before moving to the previous message.
+	if m.hasSnapped && m.selectedStartLine < m.yOffset {
+		m.ScrollUp(overflowScrollStep)
+		return
 	}
 	if m.selected > 0 {
 		m.selected--
@@ -930,6 +941,12 @@ func (m *Model) ScrollDown(n int) {
 func (m *Model) MoveDown() {
 	if m.reactionNavActive {
 		m.ExitReactionNav()
+	}
+	// If the selected message runs past the viewport bottom, scroll within it
+	// first so j reveals the rest before jumping to the next message.
+	if m.hasSnapped && m.selectedEndLine > m.yOffset+m.lastViewHeight {
+		m.ScrollDown(overflowScrollStep)
+		return
 	}
 	if m.selected < len(m.messages)-1 {
 		m.selected++
@@ -1295,6 +1312,14 @@ func (m *Model) ResolveUserName(userID string) string {
 func (m *Model) SetUserNames(names map[string]string) {
 	m.userNames = names
 	m.cache = nil // invalidate cache so mentions re-render
+	m.dirty()
+}
+
+// SetUsergroupNames sets the subteam ID -> handle map used to resolve bare
+// <!subteam^ID> mentions that carry no embedded label.
+func (m *Model) SetUsergroupNames(names map[string]string) {
+	m.usergroupNames = names
+	m.cache = nil
 	m.dirty()
 }
 
@@ -1833,12 +1858,13 @@ func (m *Model) blockkitContext(msg MessageItem, userNames, channelNames map[str
 		// emoji on first reveal. Acceptable.
 		RenderText: func(s string, un map[string]string) string {
 			return RenderSlackMarkdownWith(s, RenderSlackMarkdownOpts{
-				UserNames:    un,
-				ChannelNames: channelNames,
-				PlaceCtx:     m.emojiCtx.PlaceCtx,
-				EmojiCells:   m.emojiCtx.Cells,
-				Customs:      m.emojiCtx.Customs,
-				EmojiFlushes: nil,
+				UserNames:      un,
+				ChannelNames:   channelNames,
+				UsergroupNames: m.usergroupNames,
+				PlaceCtx:       m.emojiCtx.PlaceCtx,
+				EmojiCells:     m.emojiCtx.Cells,
+				Customs:        m.emojiCtx.Customs,
+				EmojiFlushes:   nil,
 			})
 		},
 		WrapText: WordWrap,
@@ -1890,12 +1916,13 @@ func (m *Model) renderMessagePlain(msg MessageItem, width int, avatarStr string,
 	// emoji flushes land in the same per-message `flushes` named-return
 	// slice the View() loop walks for inline-image attachments.
 	bodyOpts := RenderSlackMarkdownOpts{
-		UserNames:    userNames,
-		ChannelNames: channelNames,
-		PlaceCtx:     m.emojiCtx.PlaceCtx,
-		EmojiCells:   m.emojiCtx.Cells,
-		Customs:      m.emojiCtx.Customs,
-		EmojiFlushes: &flushes,
+		UserNames:      userNames,
+		ChannelNames:   channelNames,
+		UsergroupNames: m.usergroupNames,
+		PlaceCtx:       m.emojiCtx.PlaceCtx,
+		EmojiCells:     m.emojiCtx.Cells,
+		Customs:        m.emojiCtx.Customs,
+		EmojiFlushes:   &flushes,
 	}
 	rendered := RenderSlackMarkdownWith(MessageTextSource(msg), bodyOpts)
 	if len(m.searchTerms) > 0 {

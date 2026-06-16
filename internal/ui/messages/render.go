@@ -320,9 +320,9 @@ func SelectionTintBgANSI(focused bool) string {
 // explicitly, and RenderSlackMarkdown emits BgANSI()+FgANSI() after every
 // \x1b[m reset to avoid dark patches around inline-styled spans. Those
 // theme-bg escapes show through as dark cells on the tinted row unless
-// we substitute them. styles.Surface (used by code blocks) is intentionally
-// untouched — code blocks keep their distinct surface background even on
-// a selected row.
+// we substitute them. styles.Surface (inline code, quoted/attachment
+// blocks) is also re-tinted so a selected row reads as one uniform block
+// rather than showing lighter patches behind those spans.
 //
 // Implementation note: lipgloss/v2 combines multiple SGR codes into a
 // single escape sequence (e.g. "\x1b[1;38;2;R;G;B;48;2;R;G;Bm" for
@@ -334,12 +334,20 @@ func SelectionTintBgANSI(focused bool) string {
 // substring replacement would collide with literal digits in content
 // and with 256-color sub-arguments such as "38;5;40".
 func RepaintBgToSelectionTint(s string, focused bool) string {
-	from := bgSGRParams(BgANSI())
 	to := bgSGRParams(SelectionTintBgANSI(focused))
-	if from == "" || from == to {
+	if to == "" {
 		return s
 	}
-	return substituteBgSGR(s, from, to)
+	// Re-tint both the base message bg and the surface bg (inline code,
+	// quoted/attachment blocks) so a selected row reads as one uniform
+	// tint instead of showing lighter blocks behind styled spans.
+	for _, base := range []string{BgANSI(), bgANSIFor(styles.Surface)} {
+		from := bgSGRParams(base)
+		if from != "" && from != to {
+			s = substituteBgSGR(s, from, to)
+		}
+	}
+	return s
 }
 
 // bgSGRParams strips the "\x1b[" prefix and "m" suffix from a bg ANSI
@@ -613,8 +621,9 @@ func SidebarMutedFgANSI() string {
 // path. nil disables flush collection (cold-only callers, or callers
 // that don't care about flushes — e.g., tests).
 type RenderSlackMarkdownOpts struct {
-	UserNames    map[string]string
-	ChannelNames map[string]string
+	UserNames      map[string]string
+	ChannelNames   map[string]string
+	UsergroupNames map[string]string // subteam ID -> handle, for bare <!subteam^ID>
 
 	// Emoji-image opts (zero values disable the image path).
 	PlaceCtx     emojiutil.PlaceContext
@@ -770,6 +779,22 @@ func renderInlineFormattingWith(text string, opts RenderSlackMarkdownOpts) strin
 			if resolved, ok := userNames[userID]; ok {
 				name = resolved
 			}
+		}
+		return mentionStyle().Render("@" + name)
+	})
+
+	// Usergroup (subteam) mentions: <!subteam^S1|@eng> -> @eng. The bare
+	// form <!subteam^S1> carries no label, so resolve its ID via the
+	// usergroup cache; fall back to @group when unknown. Never leaks the
+	// raw <!subteam^…> wire form.
+	text = usergroupMentionRe.ReplaceAllStringFunc(text, func(match string) string {
+		g := usergroupMentionRe.FindStringSubmatch(match)
+		name := strings.TrimPrefix(g[2], "@")
+		if name == "" && opts.UsergroupNames != nil {
+			name = opts.UsergroupNames[g[1]]
+		}
+		if name == "" {
+			name = "group"
 		}
 		return mentionStyle().Render("@" + name)
 	})

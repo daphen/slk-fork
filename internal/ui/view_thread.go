@@ -53,6 +53,11 @@ func (a *App) renderThreadRegion(frame panelLayoutFrame, themeVer int64) string 
 	}
 	threadComposeSpacer := lipgloss.NewStyle().Background(styles.Background).Width(threadWidth - 2).Render("")
 	threadComposeView = threadComposeSpacer + "\n" + threadComposeView
+	if a.threadBroadcast {
+		bc := lipgloss.NewStyle().Foreground(styles.BorderFocus).Background(styles.Background).
+			Width(threadWidth - 2).Render("↳ also posting to channel (ctrl+b)")
+		threadComposeView = bc + "\n" + threadComposeView
+	}
 	threadComposeHeight := lipgloss.Height(threadComposeView)
 	threadContentHeight := contentHeight - 2 - threadComposeHeight
 	a.layout.SetThreadHeight(threadContentHeight)
