@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // ThreadSummary is one row in the Threads view: a thread the user is
@@ -111,17 +112,22 @@ WHERE s.workspace_id = ? AND s.active = 1
 // by selfUserID or containing the angle-bracketed mention "<@selfUserID>".
 // Used by the reconnect backfill to filter which threads warrant a
 // conversations.replies catch-up call.
-func (db *DB) ThreadInvolvesUser(workspaceID, channelID, threadTS, selfUserID string) (bool, error) {
-	mention := "%<@" + selfUserID + ">%"
-	const q = `
-SELECT 1 FROM messages
-WHERE workspace_id = ? AND channel_id = ? AND thread_ts = ?
-  AND is_deleted = 0
-  AND (user_id = ? OR text LIKE ?)
-LIMIT 1
-`
+func (db *DB) ThreadInvolvesUser(workspaceID, channelID, threadTS, selfUserID string, subteamIDs []string) (bool, error) {
+	// Involvement = the user posted, was @mentioned directly, or one of the
+	// subteams they belong to was mentioned (e.g. an on-call group that
+	// pulled them into the thread). subteamIDs may be empty.
+	conds := []string{"user_id = ?", "text LIKE ?"}
+	args := []any{workspaceID, channelID, threadTS, selfUserID, "%<@" + selfUserID + ">%"}
+	for _, sid := range subteamIDs {
+		conds = append(conds, "text LIKE ?")
+		args = append(args, "%<!subteam^"+sid+">%")
+	}
+	q := "SELECT 1 FROM messages\n" +
+		"WHERE workspace_id = ? AND channel_id = ? AND thread_ts = ?\n" +
+		"  AND is_deleted = 0\n" +
+		"  AND (" + strings.Join(conds, " OR ") + ")\nLIMIT 1"
 	var one int
-	err := db.conn.QueryRow(q, workspaceID, channelID, threadTS, selfUserID, mention).Scan(&one)
+	err := db.conn.QueryRow(q, args...).Scan(&one)
 	if err == sql.ErrNoRows {
 		return false, nil
 	}

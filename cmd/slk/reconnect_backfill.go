@@ -266,7 +266,7 @@ func (b *backfiller) runThreadPhase(ctx context.Context) error {
 	// Filter to involved threads using the cache (cheap, no network).
 	involved := make([]threadKey, 0, len(threads))
 	for _, k := range threads {
-		ok, err := b.db.ThreadInvolvesUser(b.workspaceID, k.ChannelID, k.ThreadTS, b.selfUserID)
+		ok, err := b.db.ThreadInvolvesUser(b.workspaceID, k.ChannelID, k.ThreadTS, b.selfUserID, nil)
 		if err != nil {
 			debuglog.Backfill("team=%s thread-filter err channel=%s thread_ts=%s err=%v", b.workspaceID, k.ChannelID, k.ThreadTS, err)
 			continue

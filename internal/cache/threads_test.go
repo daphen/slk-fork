@@ -10,7 +10,7 @@ func TestThreadInvolvesUser_AuthoredParent(t *testing.T) {
 	db.UpsertChannel(Channel{ID: "C1", WorkspaceID: "T1", Name: "general", Type: "channel"})
 	db.UpsertMessage(Message{TS: "1.000000", ChannelID: "C1", WorkspaceID: "T1", UserID: "USELF", Text: "parent", ThreadTS: "1.000000"})
 
-	involved, err := db.ThreadInvolvesUser("T1", "C1", "1.000000", "USELF")
+	involved, err := db.ThreadInvolvesUser("T1", "C1", "1.000000", "USELF", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +26,7 @@ func TestThreadInvolvesUser_RepliedToThread(t *testing.T) {
 	db.UpsertMessage(Message{TS: "1.000000", ChannelID: "C1", WorkspaceID: "T1", UserID: "U2", Text: "parent", ThreadTS: "1.000000"})
 	db.UpsertMessage(Message{TS: "2.000000", ChannelID: "C1", WorkspaceID: "T1", UserID: "USELF", Text: "my reply", ThreadTS: "1.000000"})
 
-	involved, err := db.ThreadInvolvesUser("T1", "C1", "1.000000", "USELF")
+	involved, err := db.ThreadInvolvesUser("T1", "C1", "1.000000", "USELF", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestThreadInvolvesUser_MentionedAngleBracket(t *testing.T) {
 	db.UpsertChannel(Channel{ID: "C1", WorkspaceID: "T1", Name: "general", Type: "channel"})
 	db.UpsertMessage(Message{TS: "1.000000", ChannelID: "C1", WorkspaceID: "T1", UserID: "U2", Text: "hey <@USELF> ping", ThreadTS: "1.000000"})
 
-	involved, err := db.ThreadInvolvesUser("T1", "C1", "1.000000", "USELF")
+	involved, err := db.ThreadInvolvesUser("T1", "C1", "1.000000", "USELF", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestThreadInvolvesUser_PlainTextNotInvolved(t *testing.T) {
 	db.UpsertChannel(Channel{ID: "C1", WorkspaceID: "T1", Name: "general", Type: "channel"})
 	db.UpsertMessage(Message{TS: "1.000000", ChannelID: "C1", WorkspaceID: "T1", UserID: "U2", Text: "discussing USELF in plain text", ThreadTS: "1.000000"})
 
-	involved, err := db.ThreadInvolvesUser("T1", "C1", "1.000000", "USELF")
+	involved, err := db.ThreadInvolvesUser("T1", "C1", "1.000000", "USELF", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestThreadInvolvesUser_NoneMatch(t *testing.T) {
 	db.UpsertMessage(Message{TS: "1.000000", ChannelID: "C1", WorkspaceID: "T1", UserID: "U2", Text: "parent", ThreadTS: "1.000000"})
 	db.UpsertMessage(Message{TS: "2.000000", ChannelID: "C1", WorkspaceID: "T1", UserID: "U3", Text: "reply", ThreadTS: "1.000000"})
 
-	involved, err := db.ThreadInvolvesUser("T1", "C1", "1.000000", "USELF")
+	involved, err := db.ThreadInvolvesUser("T1", "C1", "1.000000", "USELF", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestThreadInvolvesUser_RespectsDeleted(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	involved, err := db.ThreadInvolvesUser("T1", "C1", "1.000000", "USELF")
+	involved, err := db.ThreadInvolvesUser("T1", "C1", "1.000000", "USELF", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

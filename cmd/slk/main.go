@@ -3304,9 +3304,17 @@ func (h *rtmEventHandler) OnMessage(channelID, userID, ts, text, threadTS, subty
 		chName := h.channelNames[channelID]
 		// Thread participation: only query when it's actually a reply and
 		// the trigger is on, to avoid a DB hit on every message.
+		// Subteams the user belongs to (on-call groups etc.), as a slice for
+		// the thread-involvement query and the group-mention check below.
+		mySubteams := make([]string, 0, len(h.mySubteams))
+		for sid := range h.mySubteams {
+			mySubteams = append(mySubteams, sid)
+		}
 		threadFollowed := false
 		if h.notifyCfg.OnThread && threadTS != "" && threadTS != ts && h.db != nil {
-			if involved, err := h.db.ThreadInvolvesUser(h.workspaceID, channelID, threadTS, h.currentUserID); err == nil {
+			// A subteam mention counts as involvement, so follow-up replies in
+			// a thread the user's group was tagged into keep notifying.
+			if involved, err := h.db.ThreadInvolvesUser(h.workspaceID, channelID, threadTS, h.currentUserID, mySubteams); err == nil {
 				threadFollowed = involved
 			}
 		}
@@ -3314,7 +3322,7 @@ func (h *rtmEventHandler) OnMessage(channelID, userID, ts, text, threadTS, subty
 		// (e.g. an on-call group). Slack notifies the group's members; mirror
 		// that locally since ShouldNotify only checks direct <@me> otherwise.
 		groupMention := false
-		for sid := range h.mySubteams {
+		for _, sid := range mySubteams {
 			if strings.Contains(text, "<!subteam^"+sid+">") {
 				groupMention = true
 				break
