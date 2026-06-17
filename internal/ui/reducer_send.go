@@ -258,6 +258,14 @@ func reduceNewMessage(a *App, m NewMessageMsg) tea.Cmd {
 			m.ChannelID, m.Message.TS)
 		return nil
 	}
+	// Live-update the open thread panel for any reply to it, even when its
+	// parent channel isn't the active pane (e.g. opened from the Threads view).
+	if a.threadVisible && m.Message.ThreadTS != "" &&
+		m.ChannelID == a.threadPanel.ChannelID() &&
+		m.Message.ThreadTS == a.threadPanel.ThreadTS() {
+		a.threadPanel.AddReply(m.Message)
+	}
+
 	if m.ChannelID == a.activeChannelID {
 		// "active_channel_no_unread_bump": message arrived for the
 		// currently-viewed channel, so it's appended to the message
@@ -265,11 +273,6 @@ func reduceNewMessage(a *App, m NewMessageMsg) tea.Cmd {
 		// user is actively reading.
 		debuglog.Cache("NewMessageMsg: channel=%s ts=%s decision=active_channel_no_unread_bump",
 			m.ChannelID, m.Message.TS)
-		// Route thread replies to the thread panel if it matches
-		// the open thread.
-		if a.threadVisible && m.Message.ThreadTS == a.threadPanel.ThreadTS() {
-			a.threadPanel.AddReply(m.Message)
-		}
 		// Add to main pane if it's a top-level message (no ThreadTS or is
 		// the parent), or a thread_broadcast — a reply the author also
 		// posted to the channel, so it belongs in the channel pane too.
