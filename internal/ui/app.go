@@ -2145,6 +2145,7 @@ func openURLCmd(url string) tea.Cmd {
 func (a *App) SetUsergroupNames(names map[string]string) {
 	a.messagepane.SetUsergroupNames(names)
 	a.threadPanel.SetUsergroupNames(names)
+	a.threadsView.SetUsergroupNames(names)
 }
 
 // SetUserNames passes the user ID -> display name map to the message pane for mention resolution.

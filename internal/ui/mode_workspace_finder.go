@@ -14,21 +14,7 @@ import (
 )
 
 func handleWorkspaceFinderMode(a *App, msg tea.KeyMsg) tea.Cmd {
-	keyStr := msg.String()
-	switch msg.Key().Code {
-	case tea.KeyEnter:
-		keyStr = "enter"
-	case tea.KeyEscape:
-		keyStr = "esc"
-	case tea.KeyUp:
-		keyStr = "up"
-	case tea.KeyDown:
-		keyStr = "down"
-	case tea.KeyBackspace:
-		keyStr = "backspace"
-	}
-
-	result := a.workspaceFinder.HandleKey(keyStr)
+	result := a.workspaceFinder.HandleKey(normalizeFinderKey(msg))
 	if result != nil {
 		a.workspaceFinder.Close()
 		a.SetMode(ModeNormal)

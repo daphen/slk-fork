@@ -30,6 +30,15 @@ func handleNewMessageMode(a *App, msg tea.KeyMsg) tea.Cmd {
 	case tea.KeySpace:
 		keyStr = " "
 	}
+	// Ctrl+J / Ctrl+K as vim-style down/up (plain j/k still type into filter).
+	if msg.Key().Mod.Contains(tea.ModCtrl) {
+		switch msg.Key().Code {
+		case 'j':
+			keyStr = "down"
+		case 'k':
+			keyStr = "up"
+		}
+	}
 
 	result := a.newMessagePicker.HandleKey(keyStr)
 	if result != nil {

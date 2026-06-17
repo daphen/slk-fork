@@ -83,6 +83,16 @@ func normalizeFinderKey(msg tea.KeyMsg) string {
 	case tea.KeyBackspace:
 		return "backspace"
 	}
+	// Ctrl+J / Ctrl+K as vim-style down/up in pickers. Plain j/k fall
+	// through to msg.String() so they still type into the filter.
+	if msg.Key().Mod.Contains(tea.ModCtrl) {
+		switch msg.Key().Code {
+		case 'j':
+			return "down"
+		case 'k':
+			return "up"
+		}
+	}
 	return msg.String()
 }
 

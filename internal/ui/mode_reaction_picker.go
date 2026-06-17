@@ -23,20 +23,7 @@ import (
 )
 
 func handleReactionPickerMode(a *App, msg tea.KeyMsg) tea.Cmd {
-	keyStr := msg.String()
-
-	switch msg.Key().Code {
-	case tea.KeyEscape:
-		keyStr = "esc"
-	case tea.KeyEnter:
-		keyStr = "enter"
-	case tea.KeyUp:
-		keyStr = "up"
-	case tea.KeyDown:
-		keyStr = "down"
-	case tea.KeyBackspace:
-		keyStr = "backspace"
-	}
+	keyStr := normalizeFinderKey(msg)
 
 	// Capture values before HandleKey (which may call Close and
 	// reset them).
