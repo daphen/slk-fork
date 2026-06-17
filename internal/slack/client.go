@@ -1000,25 +1000,33 @@ func (c *Client) SendReply(ctx context.Context, channelID, threadTS, text string
 	return ts, mr, nil
 }
 
-// GetUsergroups returns a map of usergroup (subteam) ID -> handle, used to
-// resolve bare <!subteam^ID> mentions (which carry no embedded label) to a
-// readable @handle. Falls back to the group's name when it has no handle.
-func (c *Client) GetUsergroups(ctx context.Context) (map[string]string, error) {
-	groups, err := c.api.GetUserGroupsContext(ctx)
+// GetUsergroups returns (handles, member): a subteam ID -> handle map for
+// resolving bare <!subteam^ID> mentions to a readable @handle, and the set
+// of subteam IDs that selfUserID belongs to (so a mention of one of those
+// groups can trigger a notification). Members come via include_users.
+func (c *Client) GetUsergroups(ctx context.Context, selfUserID string) (map[string]string, map[string]bool, error) {
+	groups, err := c.api.GetUserGroupsContext(ctx, slack.GetUserGroupsOptionIncludeUsers(true))
 	if err != nil {
-		return nil, fmt.Errorf("fetching usergroups: %w", err)
+		return nil, nil, fmt.Errorf("fetching usergroups: %w", err)
 	}
-	out := make(map[string]string, len(groups))
+	handles := make(map[string]string, len(groups))
+	member := map[string]bool{}
 	for _, g := range groups {
 		name := g.Handle
 		if name == "" {
 			name = g.Name
 		}
 		if name != "" {
-			out[g.ID] = name
+			handles[g.ID] = name
+		}
+		for _, u := range g.Users {
+			if u == selfUserID {
+				member[g.ID] = true
+				break
+			}
 		}
 	}
-	return out, nil
+	return handles, member, nil
 }
 
 // GetReplies retrieves all replies in a thread.

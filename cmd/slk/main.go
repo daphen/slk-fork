@@ -106,6 +106,9 @@ type WorkspaceContext struct {
 	// UsergroupNames maps subteam ID -> handle, for resolving bare
 	// <!subteam^ID> mentions that carry no embedded label.
 	UsergroupNames map[string]string
+	// MySubteams is the set of subteam IDs the authed user belongs to, so a
+	// mention of one (e.g. an on-call group) can trigger a notification.
+	MySubteams map[string]bool
 	// AvatarURLs maps userID -> avatar image URL. Populated from the
 	// local users cache at connect time (synchronous, before any
 	// goroutines spin up) and refreshed from the background
@@ -1647,6 +1650,7 @@ func run() error {
 				notifier:        notifier,
 				notifyCfg:       cfg.Notifications,
 				currentUserID:   wctx.UserID,
+				mySubteams:      wctx.MySubteams,
 				channelNames:    channelNames,
 				channelTypes:    channelTypes,
 				workspaceName:   wctx.TeamName,
@@ -1960,10 +1964,12 @@ func connectWorkspace(ctx context.Context, token slackclient.Token, db *cache.DB
 		return nil, fmt.Errorf("fetching channels for %s: %w", token.TeamName, err)
 	}
 
-	// Usergroup (subteam) handles for resolving bare <!subteam^ID> mentions.
-	// Best-effort: a failure just leaves those mentions as @group.
-	if ug, ugErr := client.GetUsergroups(ctx); ugErr == nil {
+	// Usergroup (subteam) handles for resolving bare <!subteam^ID> mentions,
+	// plus the set of groups the user belongs to so a mention of one (e.g. an
+	// on-call group) notifies. Best-effort: failure leaves mentions as @group.
+	if ug, member, ugErr := client.GetUsergroups(ctx, wctx.UserID); ugErr == nil {
 		wctx.UsergroupNames = ug
+		wctx.MySubteams = member
 	} else {
 		log.Printf("Warning: fetching usergroups for %s: %v", token.TeamName, ugErr)
 	}
@@ -3213,6 +3219,7 @@ type rtmEventHandler struct {
 	notifier        *notify.Notifier
 	notifyCfg       config.Notifications
 	currentUserID   string
+	mySubteams      map[string]bool
 	channelNames    map[string]string
 	channelTypes    map[string]string
 	workspaceName   string
@@ -3303,6 +3310,16 @@ func (h *rtmEventHandler) OnMessage(channelID, userID, ts, text, threadTS, subty
 				threadFollowed = involved
 			}
 		}
+		// Group mention: the message tags a subteam the user belongs to
+		// (e.g. an on-call group). Slack notifies the group's members; mirror
+		// that locally since ShouldNotify only checks direct <@me> otherwise.
+		groupMention := false
+		for sid := range h.mySubteams {
+			if strings.Contains(text, "<!subteam^"+sid+">") {
+				groupMention = true
+				break
+			}
+		}
 		ctx := notify.NotifyContext{
 			CurrentUserID:   h.currentUserID,
 			ActiveChannelID: activeChID,
@@ -3315,6 +3332,7 @@ func (h *rtmEventHandler) OnMessage(channelID, userID, ts, text, threadTS, subty
 			IsDND:           h.wsCtx != nil && h.wsCtx.DNDEnabled && (h.wsCtx.DNDEndTS.IsZero() || time.Now().Before(h.wsCtx.DNDEndTS)),
 			ChannelName:     chName,
 			ThreadFollowed:  threadFollowed,
+			GroupMention:    groupMention,
 		}
 		// Pass the raw userID (not authorID): ShouldNotify's self-message
 		// suppression keys on the human sender, and a bot message

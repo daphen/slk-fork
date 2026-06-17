@@ -81,6 +81,9 @@ type NotifyContext struct {
 	// ThreadFollowed is true when this message is a reply in a thread the
 	// user participates in (authored or was mentioned). Set by the caller.
 	ThreadFollowed bool
+	// GroupMention is true when the message tags a user-group (subteam) the
+	// user belongs to — e.g. an on-call group. Set by the caller.
+	GroupMention bool
 }
 
 // ShouldNotify returns true if a message should trigger a desktop notification.
@@ -111,8 +114,8 @@ func ShouldNotify(ctx NotifyContext, channelID, userID, text, channelType string
 		return true
 	}
 
-	// Check mention trigger
-	if ctx.OnMention && strings.Contains(text, "<@"+ctx.CurrentUserID+">") {
+	// Check mention trigger — direct (<@me>) or a user-group the user is in.
+	if ctx.OnMention && (ctx.GroupMention || strings.Contains(text, "<@"+ctx.CurrentUserID+">")) {
 		return true
 	}
 
