@@ -46,6 +46,25 @@ ON CONFLICT(workspace_id, channel_id, thread_ts) DO UPDATE SET
 	return nil
 }
 
+// AdvanceThreadSubscriptionLastRead moves an existing active subscription's
+// last_read forward to ts, never backward, and is a no-op when the row is
+// absent. Lets the threads view reflect a just-opened thread as read
+// immediately instead of waiting for the server's thread_marked echo.
+func (db *DB) AdvanceThreadSubscriptionLastRead(workspaceID, channelID, threadTS, ts string) error {
+	if workspaceID == "" || channelID == "" || threadTS == "" || ts == "" {
+		return nil
+	}
+	const q = `
+UPDATE thread_subscriptions
+SET last_read = ?, updated_at = ?
+WHERE workspace_id = ? AND channel_id = ? AND thread_ts = ? AND last_read < ?
+`
+	if _, err := db.conn.Exec(q, ts, time.Now().Unix(), workspaceID, channelID, threadTS, ts); err != nil {
+		return fmt.Errorf("advancing thread_subscriptions last_read: %w", err)
+	}
+	return nil
+}
+
 // DeleteThreadSubscription removes a thread_subscriptions row outright
 // (not a tombstone). Used by tests; production callers prefer
 // UpsertThreadSubscription with active=false to preserve LastRead.

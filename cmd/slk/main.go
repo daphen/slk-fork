@@ -1368,6 +1368,12 @@ func run() error {
 					return
 				}
 				client := wctx.Client
+				teamID := wctx.TeamID
+				if db != nil {
+					if err := db.AdvanceThreadSubscriptionLastRead(teamID, chIDStr, threadTSStr, tsStr); err != nil {
+						log.Printf("Warning: AdvanceThreadSubscriptionLastRead(%s, %s): %v", chIDStr, threadTSStr, err)
+					}
+				}
 				go func() {
 					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 					defer cancel()
@@ -1597,6 +1603,14 @@ func run() error {
 		p.Send(messages.AvatarReadyMsg{UserID: userID})
 	})
 
+	// Activating a desktop notification (click / WM keybind → D-Bus
+	// ActionInvoked) switches slk to the notifying channel. The key is the
+	// channel ID (Notify groups by it); fires from the D-Bus signal
+	// goroutine, so route it onto the program loop.
+	notifier.SetOnActivate(func(channelID string) {
+		p.Send(ui.NotificationActivatedMsg{ChannelID: channelID})
+	})
+
 	// Launch workspace connections in background goroutines
 	// Results are sent to the TUI via p.Send()
 	for _, ot := range orderedTokens {
@@ -1757,6 +1771,8 @@ func run() error {
 	}).Run(wakeCtx)
 
 	_, err = p.Run()
+
+	notifier.Close()
 
 	// Clean up connection managers
 	for _, wctx := range workspaces {

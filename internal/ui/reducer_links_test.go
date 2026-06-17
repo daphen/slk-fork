@@ -102,6 +102,43 @@ func TestOpenLink_OtherChannel_DispatchesChannelSelected(t *testing.T) {
 	}
 }
 
+func TestNotificationActivated_KnownChannel_DispatchesChannelSelected(t *testing.T) {
+	app, _ := linkTestApp(t)
+	app.activeChannelID = "CELSEWHERE"
+	_, cmd := app.Update(NotificationActivatedMsg{ChannelID: "C054JFCBN69"})
+	msgs := drainCmd(cmd)
+	var sel *ChannelSelectedMsg
+	for _, m := range msgs {
+		if cs, ok := m.(ChannelSelectedMsg); ok {
+			sel = &cs
+		}
+	}
+	if sel == nil {
+		t.Fatalf("no ChannelSelectedMsg in %#v", msgs)
+	}
+	if sel.ID != "C054JFCBN69" || sel.Name != "general" || sel.Type != "channel" {
+		t.Errorf("ChannelSelectedMsg = %+v", sel)
+	}
+}
+
+func TestNotificationActivated_ActiveChannel_NoOp(t *testing.T) {
+	app, _ := linkTestApp(t)
+	app.activeChannelID = "C054JFCBN69"
+	_, cmd := app.Update(NotificationActivatedMsg{ChannelID: "C054JFCBN69"})
+	if msgs := drainCmd(cmd); len(msgs) != 0 {
+		t.Errorf("expected no dispatch for already-active channel, got %#v", msgs)
+	}
+}
+
+func TestNotificationActivated_UnknownChannel_NoOp(t *testing.T) {
+	app, _ := linkTestApp(t)
+	app.activeChannelID = "CELSEWHERE"
+	_, cmd := app.Update(NotificationActivatedMsg{ChannelID: "CUNKNOWN"})
+	if msgs := drainCmd(cmd); len(msgs) != 0 {
+		t.Errorf("expected no dispatch for unknown channel, got %#v", msgs)
+	}
+}
+
 func TestOpenLink_ActiveChannel_SelectsMessage(t *testing.T) {
 	app, _ := linkTestApp(t)
 	app.activeChannelID = "C054JFCBN69"

@@ -2,7 +2,65 @@ package notify
 
 import (
 	"testing"
+
+	enotify "github.com/esiqveland/notify"
 )
+
+// newTestNotifier builds a Notifier with the id→key maps wired but no D-Bus
+// connection, so the action-routing logic can be exercised in isolation.
+func newTestNotifier() *Notifier {
+	return &Notifier{
+		enabled: true,
+		lastID:  map[string]uint32{},
+		idToKey: map[uint32]string{},
+	}
+}
+
+func TestNotifier_HandleAction_RoutesDefaultToKey(t *testing.T) {
+	n := newTestNotifier()
+	n.idToKey[7] = "C1"
+	var got string
+	n.SetOnActivate(func(key string) { got = key })
+
+	n.handleAction(&enotify.ActionInvokedSignal{ID: 7, ActionKey: "default"})
+	if got != "C1" {
+		t.Errorf("onActivate key = %q, want %q", got, "C1")
+	}
+}
+
+func TestNotifier_HandleAction_UnknownID_NoCallback(t *testing.T) {
+	n := newTestNotifier()
+	n.idToKey[7] = "C1"
+	called := false
+	n.SetOnActivate(func(string) { called = true })
+
+	n.handleAction(&enotify.ActionInvokedSignal{ID: 99, ActionKey: "default"})
+	if called {
+		t.Error("onActivate should not fire for an id we did not send")
+	}
+}
+
+func TestNotifier_HandleAction_NonDefaultKey_Ignored(t *testing.T) {
+	n := newTestNotifier()
+	n.idToKey[7] = "C1"
+	called := false
+	n.SetOnActivate(func(string) { called = true })
+
+	n.handleAction(&enotify.ActionInvokedSignal{ID: 7, ActionKey: "other"})
+	if called {
+		t.Error("onActivate should only fire for the default action")
+	}
+}
+
+func TestNotifier_HandleClosed_PrunesMapping(t *testing.T) {
+	n := newTestNotifier()
+	n.idToKey[7] = "C1"
+
+	n.handleClosed(&enotify.NotificationClosedSignal{ID: 7})
+	if _, ok := n.idToKey[7]; ok {
+		t.Error("closed notification id should be pruned from idToKey")
+	}
+}
 
 func TestShouldNotify_SelfMessage(t *testing.T) {
 	ctx := NotifyContext{

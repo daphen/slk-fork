@@ -196,6 +196,10 @@ func (m *mockSlackAPI) GetUsersContext(ctx context.Context, options ...slack.Get
 	return nil, nil
 }
 
+func (m *mockSlackAPI) GetUserGroupsContext(ctx context.Context, options ...slack.GetUserGroupsOption) ([]slack.UserGroup, error) {
+	return nil, nil
+}
+
 func (m *mockSlackAPI) GetEmoji() (map[string]string, error) {
 	if m.getEmojiFn != nil {
 		return m.getEmojiFn()
@@ -1589,7 +1593,7 @@ func TestSendReply_BuildsRichTextBlock(t *testing.T) {
 	defer closeFn()
 	c := &Client{api: api}
 
-	ts, sentMrkdwn, err := c.SendReply(context.Background(), "C1", "1700000000.000100", "see [docs](https://x.com)")
+	ts, sentMrkdwn, err := c.SendReply(context.Background(), "C1", "1700000000.000100", "see [docs](https://x.com)", false)
 	if err != nil {
 		t.Fatalf("SendReply: %v", err)
 	}

@@ -13,26 +13,85 @@ import (
 
 // Notifier sends OS-level desktop notifications.
 type Notifier struct {
-	enabled bool
-	conn    *dbus.Conn
+	enabled  bool
+	conn     *dbus.Conn
+	notifier enotify.Notifier // listens for ActionInvoked/Closed; nil ⇒ stateless send
 
-	mu     sync.Mutex
-	lastID map[string]uint32 // group key (channel) -> last notification id
+	mu         sync.Mutex
+	lastID     map[string]uint32 // group key (channel) -> last notification id
+	idToKey    map[uint32]string // notification id -> group key (for ActionInvoked routing)
+	onActivate func(key string)  // invoked when a notification's default action fires
 }
 
 // New creates a Notifier. If enabled is false, Notify is a no-op.
 func New(enabled bool) *Notifier {
-	n := &Notifier{enabled: enabled, lastID: map[string]uint32{}}
-	if enabled {
-		// Own session-bus connection so notifications carry AppName "slk".
-		// beeep hardcodes "DefaultAppName", which downstream consumers (e.g.
-		// a bar's per-app notification badge) can't attribute to slk. Fall
-		// back to beeep if the session bus isn't reachable.
-		if conn, err := dbus.SessionBus(); err == nil {
-			n.conn = conn
-		}
+	n := &Notifier{enabled: enabled, lastID: map[string]uint32{}, idToKey: map[uint32]string{}}
+	if !enabled {
+		return n
+	}
+	// Own session-bus connection so notifications carry AppName "slk".
+	// beeep hardcodes "DefaultAppName", which downstream consumers (e.g.
+	// a bar's per-app notification badge) can't attribute to slk. Fall
+	// back to beeep if the session bus isn't reachable.
+	conn, err := dbus.SessionBus()
+	if err != nil {
+		return n
+	}
+	n.conn = conn
+	// A stateful Notifier subscribes to ActionInvoked/NotificationClosed so
+	// activating a notification can route back to its channel. If that
+	// subscription fails we keep conn for stateless sends (no action routing).
+	if en, err := enotify.New(conn,
+		enotify.WithOnAction(n.handleAction),
+		enotify.WithOnClosed(n.handleClosed),
+	); err == nil {
+		n.notifier = en
 	}
 	return n
+}
+
+// SetOnActivate registers the callback fired when a notification's default
+// action is invoked. The argument is the group key passed to Notify (the
+// channel ID). Called from the D-Bus signal goroutine — the callback must be
+// thread-safe (e.g. post onto the program loop).
+func (n *Notifier) SetOnActivate(fn func(key string)) {
+	n.mu.Lock()
+	n.onActivate = fn
+	n.mu.Unlock()
+}
+
+// handleAction routes an ActionInvoked signal back to the channel it was sent
+// for. dbus delivers signals for every app's notifications, so an id not in
+// idToKey is one of ours to ignore.
+func (n *Notifier) handleAction(sig *enotify.ActionInvokedSignal) {
+	if sig == nil || sig.ActionKey != "default" {
+		return
+	}
+	n.mu.Lock()
+	key, ok := n.idToKey[sig.ID]
+	fn := n.onActivate
+	n.mu.Unlock()
+	if ok && fn != nil {
+		fn(key)
+	}
+}
+
+// handleClosed prunes the id→key entry for a dismissed/expired notification.
+func (n *Notifier) handleClosed(sig *enotify.NotificationClosedSignal) {
+	if sig == nil {
+		return
+	}
+	n.mu.Lock()
+	delete(n.idToKey, sig.ID)
+	n.mu.Unlock()
+}
+
+// Close shuts down the D-Bus signal loop. Safe to call when disabled.
+func (n *Notifier) Close() error {
+	if n.notifier != nil {
+		return n.notifier.Close()
+	}
+	return nil
 }
 
 // Notify sends a desktop notification. key groups notifications by
@@ -47,20 +106,33 @@ func (n *Notifier) Notify(key, title, body string) error {
 		n.mu.Lock()
 		replaces := n.lastID[key]
 		n.mu.Unlock()
-		id, err := enotify.SendNotification(n.conn, enotify.Notification{
+		note := enotify.Notification{
 			AppName:       "slk",
 			ReplacesID:    replaces,
 			Summary:       title,
 			Body:          body,
+			Actions:       []enotify.Action{enotify.NewDefaultAction("Open")},
 			ExpireTimeout: enotify.ExpireTimeoutSetByNotificationServer,
-		})
+		}
+		var id uint32
+		var err error
+		if n.notifier != nil {
+			id, err = n.notifier.SendNotification(note)
+		} else {
+			id, err = enotify.SendNotification(n.conn, note)
+		}
 		if err == nil {
 			n.mu.Lock()
+			if prev, had := n.lastID[key]; had && prev != id {
+				delete(n.idToKey, prev) // replaced in place; drop the stale id
+			}
 			n.lastID[key] = id
+			n.idToKey[id] = key
 			n.mu.Unlock()
 		}
 		return err
 	}
+	// beeep fallback carries no actions — activation routing needs D-Bus.
 	return beeep.Notify(title, body, "")
 }
 

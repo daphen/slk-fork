@@ -31,11 +31,32 @@ type pendingLinkNav struct {
 }
 
 var reduceLinks reducerFunc = func(a *App, msg tea.Msg) (tea.Cmd, bool) {
-	m, ok := msg.(OpenLinkMsg)
-	if !ok {
-		return nil, false
+	switch m := msg.(type) {
+	case OpenLinkMsg:
+		return a.routeLink(m.URL), true
+	case NotificationActivatedMsg:
+		return a.activateNotification(m.ChannelID), true
 	}
-	return a.routeLink(m.URL), true
+	return nil, false
+}
+
+// activateNotification switches the active channel to channelID in response
+// to a desktop-notification default action. Resolves name/type via the same
+// ChannelService.Lookup that link navigation uses, then dispatches the
+// existing ChannelSelectedMsg. No-op when already viewing the channel or when
+// it isn't in the active workspace (the WM still raises the window).
+func (a *App) activateNotification(channelID string) tea.Cmd {
+	if channelID == "" || channelID == a.activeChannelID {
+		return nil
+	}
+	name, chType, ok := a.channels.Lookup(ids.ChannelID(channelID))
+	if !ok {
+		return nil
+	}
+	id, n, t := channelID, name, chType
+	return func() tea.Msg {
+		return ChannelSelectedMsg{ID: id, Name: n, Type: t}
+	}
 }
 
 // routeLink decides between in-app navigation and the browser.
