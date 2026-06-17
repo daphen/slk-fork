@@ -73,6 +73,9 @@ type Appearance struct {
 	Theme           string `toml:"theme"`
 	TimestampFormat string `toml:"timestamp_format"`
 	ShowAvatars     bool   `toml:"show_avatars"`
+	// UnreadsOnTop floats all visibly-unread channels/DMs into a synthetic
+	// "Unread" group at the top of the sidebar, regardless of type.
+	UnreadsOnTop bool `toml:"unreads_on_top"`
 	// ImageProtocol controls how inline images are rendered.
 	// One of: "auto", "kitty", "sixel", "halfblock", "off".
 	ImageProtocol string `toml:"image_protocol"`

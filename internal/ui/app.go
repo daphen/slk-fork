@@ -2397,6 +2397,12 @@ func (a *App) SetSidebarStaleThreshold(d time.Duration) {
 	a.sidebar.SetStaleThreshold(d)
 }
 
+// SetUnreadsOnTop floats visibly-unread channels/DMs into an "Unread" group
+// at the top of the sidebar.
+func (a *App) SetUnreadsOnTop(v bool) {
+	a.sidebar.SetUnreadsOnTop(v)
+}
+
 // SetTypingSender sets the callback for sending typing indicators.
 func (a *App) SetTypingSender(fn TypingSendFunc) {
 	a.typingOut.SetSender(fn)

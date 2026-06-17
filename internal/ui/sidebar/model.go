@@ -25,6 +25,9 @@ const (
 	// matching the behavior of the official Slack desktop client. Falls
 	// between "Direct Messages" (humans) and "Channels" (firehose).
 	defaultAppsSection = "Apps"
+	// unreadSectionName is the synthetic top group that collects all
+	// visibly-unread channels/DMs when unreadsOnTop is enabled.
+	unreadSectionName = "Unread"
 )
 
 type ChannelItem struct {
@@ -214,6 +217,9 @@ type Model struct {
 	// SetReadStateReader. May be nil — nil means "treat everything as
 	// no-unread" (used during early construction).
 	readStateReader func() map[string]cache.ReadState
+	// unreadsOnTop, when set, floats all visibly-unread channels/DMs into
+	// a synthetic "Unread" group at the top of the sidebar.
+	unreadsOnTop bool
 	// collapseByID parallels `collapsed` for Slack-mode (ID-keyed).
 	// Renames preserve collapse state because the ID is stable.
 	// Populated lazily; lookups treat nil as empty. Used in Task 9.
@@ -294,6 +300,18 @@ func (m *Model) SetReadStateReader(f func() map[string]cache.ReadState) {
 	m.dirty()
 }
 
+// SetUnreadsOnTop toggles floating visibly-unread channels/DMs into a
+// synthetic "Unread" group at the top of the sidebar.
+func (m *Model) SetUnreadsOnTop(v bool) {
+	if m.unreadsOnTop == v {
+		return
+	}
+	m.unreadsOnTop = v
+	m.cacheValid = false
+	m.rebuildNavPreserveCursor()
+	m.dirty()
+}
+
 // UnreadChannelCount returns the number of channels currently in the
 // sidebar that should render as unread (HasUnread && !IsMuted), via
 // ChannelItem.IsVisiblyUnread. Returns 0 when no reader is installed.
@@ -317,6 +335,12 @@ func (m *Model) UnreadChannelCount() int {
 // the installed reader. Called by App.Update on ReadStateChangedMsg.
 func (m *Model) Invalidate() {
 	m.cacheValid = false
+	// With unreads-on-top, read state decides which group an item lives in,
+	// so a read-state change must rebuild the nav structure, not just the
+	// row cache. (No-op cost otherwise — this path only fires when enabled.)
+	if m.unreadsOnTop {
+		m.rebuildNavPreserveCursor()
+	}
 	m.dirty()
 }
 
@@ -940,15 +964,37 @@ func (m *Model) currentCursorKey() (cursorKey, bool) {
 func (m *Model) rebuildNav() {
 	sectionOrder := m.modelOrderedSections(m.filtered)
 
+	// When unreadsOnTop is set, pull visibly-unread channels/DMs into a
+	// synthetic "Unread" group at the very top (regardless of type), and
+	// omit them from their normal section while unread.
+	var states map[string]cache.ReadState
+	if m.unreadsOnTop && m.readStateReader != nil {
+		states = m.readStateReader()
+	}
+
 	// Bucket filter indices by section in display order.
 	bucket := map[string][]int{}
+	var unread []int
 	for fi, idx := range m.filtered {
-		key := m.sectionFor(m.items[idx])
+		it := m.items[idx]
+		if states != nil && it.IsVisiblyUnread(states[it.ID]) {
+			unread = append(unread, fi)
+			continue
+		}
+		key := m.sectionFor(it)
 		bucket[key] = append(bucket[key], fi)
 	}
 
-	nav := make([]navItem, 0, 1+len(sectionOrder))
+	nav := make([]navItem, 0, 2+len(sectionOrder))
 	nav = append(nav, navItem{kind: navThreads})
+	if len(unread) > 0 {
+		nav = append(nav, navItem{kind: navHeader, header: unreadSectionName})
+		if !m.IsCollapsed(unreadSectionName) {
+			for _, fi := range unread {
+				nav = append(nav, navItem{kind: navChannel, fi: fi})
+			}
+		}
+	}
 	for _, name := range sectionOrder {
 		nav = append(nav, navItem{kind: navHeader, header: name})
 		if m.IsCollapsed(name) {

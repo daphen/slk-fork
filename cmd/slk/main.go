@@ -806,6 +806,7 @@ func run() error {
 	app.SetWorkspaces(wsItems)
 	app.SetTypingEnabled(cfg.Animations.TypingIndicators)
 	app.SetSidebarStaleThreshold(time.Duration(cfg.Sidebar.HideInactiveAfterDays) * 24 * time.Hour)
+	app.SetUnreadsOnTop(cfg.Appearance.UnreadsOnTop)
 	app.SetMouseWheelLines(cfg.Appearance.MouseWheelLines)
 
 	// Wire theme switcher
