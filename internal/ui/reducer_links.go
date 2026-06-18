@@ -35,18 +35,52 @@ var reduceLinks reducerFunc = func(a *App, msg tea.Msg) (tea.Cmd, bool) {
 	case OpenLinkMsg:
 		return a.routeLink(m.URL), true
 	case NotificationActivatedMsg:
-		return a.activateNotification(m.ChannelID), true
+		return a.activateNotification(m.TeamID, m.ChannelID, m.ThreadTS), true
 	}
 	return nil, false
 }
 
-// activateNotification switches the active channel to channelID in response
-// to a desktop-notification default action. Resolves name/type via the same
-// ChannelService.Lookup that link navigation uses, then dispatches the
-// existing ChannelSelectedMsg. No-op when already viewing the channel or when
-// it isn't in the active workspace (the WM still raises the window).
-func (a *App) activateNotification(channelID string) tea.Cmd {
-	if channelID == "" || channelID == a.activeChannelID {
+// pendingWorkspaceNav is a notification navigation awaiting a workspace
+// switch; consumed by reduceWorkspaceSwitched once teamID is active.
+type pendingWorkspaceNav struct {
+	teamID    string
+	channelID string
+	threadTS  string
+}
+
+// activateNotification navigates to a notification's source, switching
+// workspace first (deferring the nav via pendingWorkspaceNav, since the switch
+// loads channels asynchronously) when teamID names a different workspace.
+func (a *App) activateNotification(teamID, channelID, threadTS string) tea.Cmd {
+	if channelID == "" {
+		return nil
+	}
+	if teamID != "" && teamID != a.activeTeamID && a.workspaceSwitcher != nil {
+		a.pendingWorkspaceNav = &pendingWorkspaceNav{teamID: teamID, channelID: channelID, threadTS: threadTS}
+		switcher := a.workspaceSwitcher
+		return func() tea.Msg { return switcher(teamID) }
+	}
+	return a.navigateToNotificationTarget(channelID, threadTS)
+}
+
+// navigateToNotificationTarget selects channelID, opening its thread (via the
+// same pendingLinkNav path as routeLink) when threadTS is set. No-op when the
+// channel isn't resolvable in the active workspace.
+func (a *App) navigateToNotificationTarget(channelID, threadTS string) tea.Cmd {
+	if threadTS != "" {
+		if channelID == a.activeChannelID {
+			a.pendingLinkNav = &pendingLinkNav{channelID: channelID, threadTS: threadTS}
+			return a.completePendingLinkNav(a.activeChannelID, true)
+		}
+		name, chType, ok := a.channels.Lookup(ids.ChannelID(channelID))
+		if !ok {
+			return nil
+		}
+		a.pendingLinkNav = &pendingLinkNav{channelID: channelID, threadTS: threadTS}
+		id, n, t := channelID, name, chType
+		return func() tea.Msg { return ChannelSelectedMsg{ID: id, Name: n, Type: t} }
+	}
+	if channelID == a.activeChannelID {
 		return nil
 	}
 	name, chType, ok := a.channels.Lookup(ids.ChannelID(channelID))
@@ -54,9 +88,7 @@ func (a *App) activateNotification(channelID string) tea.Cmd {
 		return nil
 	}
 	id, n, t := channelID, name, chType
-	return func() tea.Msg {
-		return ChannelSelectedMsg{ID: id, Name: n, Type: t}
-	}
+	return func() tea.Msg { return ChannelSelectedMsg{ID: id, Name: n, Type: t} }
 }
 
 // routeLink decides between in-app navigation and the browser.

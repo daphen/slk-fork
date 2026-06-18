@@ -63,13 +63,13 @@ type (
 		// last-visited timestamp.
 		FromHistory bool
 	}
-	// NotificationActivatedMsg is dispatched when the user activates a
-	// desktop notification's default action (click or WM keybind). The
-	// handler switches the active channel to ChannelID. Posted onto the
-	// program loop from the D-Bus signal goroutine, so it crosses into the
-	// UI thread safely.
+	// NotificationActivatedMsg fires when a desktop notification's default
+	// action is activated: switch to TeamID if different, open ChannelID, and
+	// open its thread when ThreadTS is set. Posted from the D-Bus goroutine.
 	NotificationActivatedMsg struct {
+		TeamID    string
 		ChannelID string
+		ThreadTS  string
 	}
 	MessagesLoadedMsg struct {
 		ChannelID  string

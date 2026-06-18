@@ -11,6 +11,31 @@ import (
 	"github.com/godbus/dbus/v5"
 )
 
+// routeKeySep separates the fields of a notification's group key (an ASCII
+// unit separator, which can't appear in a Slack ID or ts).
+const routeKeySep = "\x1f"
+
+// RouteKey packs a notification's routing target (workspace, channel, thread)
+// into its opaque group key. Empty threadTS for channel messages, which keeps
+// channel and thread-reply notifications in separate dedup groups.
+func RouteKey(teamID, channelID, threadTS string) string {
+	return teamID + routeKeySep + channelID + routeKeySep + threadTS
+}
+
+// ParseRouteKey splits a RouteKey into its parts. A key with no separators is
+// treated as a bare channel ID (teamID/threadTS empty) for forward safety.
+func ParseRouteKey(key string) (teamID, channelID, threadTS string) {
+	parts := strings.SplitN(key, routeKeySep, 3)
+	switch len(parts) {
+	case 3:
+		return parts[0], parts[1], parts[2]
+	case 2:
+		return parts[0], parts[1], ""
+	default:
+		return "", key, ""
+	}
+}
+
 // Notifier sends OS-level desktop notifications.
 type Notifier struct {
 	enabled  bool

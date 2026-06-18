@@ -307,6 +307,18 @@ func reduceWorkspaceSwitched(a *App, m WorkspaceSwitchedMsg) tea.Cmd {
 	a.workspaceRail.SelectByID(m.TeamID)
 
 	var batch []tea.Cmd
+	// A notification activated this switch: navigate to its channel/thread
+	// instead of restoring the last-viewed channel.
+	if a.pendingWorkspaceNav != nil && a.pendingWorkspaceNav.teamID == m.TeamID {
+		pwn := a.pendingWorkspaceNav
+		a.pendingWorkspaceNav = nil
+		if cmd := a.navigateToNotificationTarget(pwn.channelID, pwn.threadTS); cmd != nil {
+			a.sidebar.SelectByID(pwn.channelID)
+			threads := a.threads
+			team := ids.TeamID(m.TeamID)
+			return tea.Batch(cmd, func() tea.Msg { return threads.ListFetch(team) })
+		}
+	}
 	// Restore the last-viewed channel for this workspace if we
 	// have one and it still exists; otherwise fall back to the
 	// first channel in the sidebar. Move the sidebar cursor to

@@ -1607,8 +1607,9 @@ func run() error {
 	// ActionInvoked) switches slk to the notifying channel. The key is the
 	// channel ID (Notify groups by it); fires from the D-Bus signal
 	// goroutine, so route it onto the program loop.
-	notifier.SetOnActivate(func(channelID string) {
-		p.Send(ui.NotificationActivatedMsg{ChannelID: channelID})
+	notifier.SetOnActivate(func(key string) {
+		teamID, channelID, threadTS := notify.ParseRouteKey(key)
+		p.Send(ui.NotificationActivatedMsg{TeamID: teamID, ChannelID: channelID, ThreadTS: threadTS})
 	})
 
 	// Launch workspace connections in background goroutines
@@ -3375,10 +3376,13 @@ func (h *rtmEventHandler) OnMessage(channelID, userID, ts, text, threadTS, subty
 				title = h.workspaceName + ": " + senderName
 			}
 			body := senderName + ": " + notify.StripSlackMarkup(text, h.userNames)
-			// Group by channel so successive messages from the same
-			// conversation replace the prior notification (latest message
-			// shown) instead of stacking stale ones.
-			go h.notifier.Notify(channelID, title, body)
+			// threadTS only for real replies (not a parent), so channel
+			// messages and thread replies dedup into separate groups.
+			keyThreadTS := ""
+			if threadTS != "" && threadTS != ts {
+				keyThreadTS = threadTS
+			}
+			go h.notifier.Notify(notify.RouteKey(h.workspaceID, channelID, keyThreadTS), title, body)
 		}
 	}
 

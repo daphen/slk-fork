@@ -102,17 +102,21 @@ func TestOpenLink_OtherChannel_DispatchesChannelSelected(t *testing.T) {
 	}
 }
 
+func channelSelectedIn(msgs []tea.Msg) *ChannelSelectedMsg {
+	for _, m := range msgs {
+		if cs, ok := m.(ChannelSelectedMsg); ok {
+			return &cs
+		}
+	}
+	return nil
+}
+
 func TestNotificationActivated_KnownChannel_DispatchesChannelSelected(t *testing.T) {
 	app, _ := linkTestApp(t)
 	app.activeChannelID = "CELSEWHERE"
 	_, cmd := app.Update(NotificationActivatedMsg{ChannelID: "C054JFCBN69"})
 	msgs := drainCmd(cmd)
-	var sel *ChannelSelectedMsg
-	for _, m := range msgs {
-		if cs, ok := m.(ChannelSelectedMsg); ok {
-			sel = &cs
-		}
-	}
+	sel := channelSelectedIn(msgs)
 	if sel == nil {
 		t.Fatalf("no ChannelSelectedMsg in %#v", msgs)
 	}
@@ -136,6 +140,60 @@ func TestNotificationActivated_UnknownChannel_NoOp(t *testing.T) {
 	_, cmd := app.Update(NotificationActivatedMsg{ChannelID: "CUNKNOWN"})
 	if msgs := drainCmd(cmd); len(msgs) != 0 {
 		t.Errorf("expected no dispatch for unknown channel, got %#v", msgs)
+	}
+}
+
+func TestNotificationActivated_Thread_OpensThreadPanel(t *testing.T) {
+	app, _ := linkTestApp(t)
+	app.activeChannelID = "C054JFCBN69"
+	var fetchedChannel, fetchedThread string
+	app.setThreadFetcherForTest(func(channelID ids.ChannelID, threadTS ids.ThreadTS) tea.Msg {
+		fetchedChannel, fetchedThread = string(channelID), string(threadTS)
+		return nil
+	})
+	_, cmd := app.Update(NotificationActivatedMsg{ChannelID: "C054JFCBN69", ThreadTS: "1779284700.000100"})
+	drainCmd(cmd)
+	if !app.threadVisible {
+		t.Fatal("thread panel not visible")
+	}
+	if got := app.threadPanel.ThreadTS(); got != "1779284700.000100" {
+		t.Errorf("ThreadTS = %q", got)
+	}
+	if fetchedChannel != "C054JFCBN69" || fetchedThread != "1779284700.000100" {
+		t.Errorf("fetch = (%q, %q)", fetchedChannel, fetchedThread)
+	}
+}
+
+func TestNotificationActivated_CrossWorkspace_SwitchesThenNavigates(t *testing.T) {
+	app, _ := linkTestApp(t) // activeTeamID = "T1"
+	var switched string
+	app.SetWorkspaceSwitcher(func(teamID string) tea.Msg {
+		switched = teamID
+		return WorkspaceSwitchedMsg{TeamID: teamID, TeamName: "Other", Channels: nil}
+	})
+
+	_, cmd := app.Update(NotificationActivatedMsg{TeamID: "T2", ChannelID: "C054JFCBN69"})
+	if app.pendingWorkspaceNav == nil || app.pendingWorkspaceNav.teamID != "T2" {
+		t.Fatalf("pendingWorkspaceNav = %+v", app.pendingWorkspaceNav)
+	}
+
+	// Running the switch cmd yields WorkspaceSwitchedMsg; feed it back and
+	// capture the navigation it triggers.
+	var sel *ChannelSelectedMsg
+	for _, m := range drainCmd(cmd) {
+		_, c := app.Update(m)
+		if s := channelSelectedIn(drainCmd(c)); s != nil {
+			sel = s
+		}
+	}
+	if switched != "T2" {
+		t.Errorf("switcher called with %q, want T2", switched)
+	}
+	if app.pendingWorkspaceNav != nil {
+		t.Error("pendingWorkspaceNav should be cleared after the switch")
+	}
+	if sel == nil || sel.ID != "C054JFCBN69" {
+		t.Fatalf("expected post-switch ChannelSelectedMsg for target, got %+v", sel)
 	}
 }
 

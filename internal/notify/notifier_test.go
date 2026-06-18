@@ -16,6 +16,27 @@ func newTestNotifier() *Notifier {
 	}
 }
 
+func TestRouteKey_RoundTrip(t *testing.T) {
+	cases := []struct{ team, channel, thread string }{
+		{"T1", "C1", ""},
+		{"T1", "C1", "1700000000.000100"},
+		{"", "C1", ""},
+	}
+	for _, c := range cases {
+		team, channel, thread := ParseRouteKey(RouteKey(c.team, c.channel, c.thread))
+		if team != c.team || channel != c.channel || thread != c.thread {
+			t.Errorf("round-trip(%q,%q,%q) = (%q,%q,%q)", c.team, c.channel, c.thread, team, channel, thread)
+		}
+	}
+}
+
+func TestParseRouteKey_BareChannelID(t *testing.T) {
+	team, channel, thread := ParseRouteKey("C1")
+	if team != "" || channel != "C1" || thread != "" {
+		t.Errorf("bare key = (%q,%q,%q), want (\"\",\"C1\",\"\")", team, channel, thread)
+	}
+}
+
 func TestNotifier_HandleAction_RoutesDefaultToKey(t *testing.T) {
 	n := newTestNotifier()
 	n.idToKey[7] = "C1"

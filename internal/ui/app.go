@@ -256,6 +256,10 @@ type App struct {
 	// reducer_links.go.
 	pendingLinkNav *pendingLinkNav
 
+	// pendingWorkspaceNav defers a notification's channel/thread navigation
+	// until a cross-workspace switch has loaded the target workspace.
+	pendingWorkspaceNav *pendingWorkspaceNav
+
 	// search is the active in-channel search (nil = none).
 	// searchInput is the prompt buffer while in ModeSearch.
 	// searchGen is a monotonic generation counter: bumped on every
