@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	"github.com/gammons/slk/internal/cache"
 	"github.com/gammons/slk/internal/config"
@@ -135,6 +136,60 @@ func TestOnConversationOpened_InactiveWorkspace_PersistsContext(t *testing.T) {
 	}
 	if h.channelTypes["G1"] != "group_dm" {
 		t.Errorf("channelTypes not mirrored on inactive workspace: %q", h.channelTypes["G1"])
+	}
+}
+
+// recordingNotifier captures Notify calls for assertions.
+type recordingNotifier struct{ calls chan string }
+
+func (r *recordingNotifier) Notify(key, title, body string) error {
+	r.calls <- key
+	return nil
+}
+
+func newMentionHandler(db *cache.DB, n messageNotifier) *rtmEventHandler {
+	return &rtmEventHandler{
+		db:              db,
+		wsCtx:           &WorkspaceContext{},
+		isActive:        func() bool { return false },
+		activeChannelID: func() string { return "" },
+		workspaceID:     "T1",
+		notifier:        n,
+		notifyCfg:       config.Notifications{Enabled: true, OnMention: true},
+		currentUserID:   "USELF",
+		channelNames:    map[string]string{"C1": "general"},
+		channelTypes:    map[string]string{"C1": "channel"},
+	}
+}
+
+func TestOnMessage_Mention_FiresNotification(t *testing.T) {
+	db := newTestDB(t)
+	_ = db.UpsertChannel(cache.Channel{ID: "C1", WorkspaceID: "T1", Name: "general", Type: "channel"})
+	n := &recordingNotifier{calls: make(chan string, 1)}
+	h := newMentionHandler(db, n)
+
+	h.OnMessage("C1", "U1", "1.001", "hey <@USELF>", "", "", false, nil, slack.Blocks{}, nil, "", "")
+
+	select {
+	case <-n.calls:
+	case <-time.After(time.Second):
+		t.Fatal("expected a notification for a mention")
+	}
+}
+
+func TestOnMessage_Edit_DoesNotFireNotification(t *testing.T) {
+	db := newTestDB(t)
+	_ = db.UpsertChannel(cache.Channel{ID: "C1", WorkspaceID: "T1", Name: "general", Type: "channel"})
+	n := &recordingNotifier{calls: make(chan string, 1)}
+	h := newMentionHandler(db, n)
+
+	// Same mention, but delivered as an in-place edit (message_changed).
+	h.OnMessage("C1", "U1", "1.001", "hey <@USELF>", "", "message_changed", true, nil, slack.Blocks{}, nil, "", "")
+
+	select {
+	case <-n.calls:
+		t.Fatal("edit (message_changed) must not fire a notification")
+	case <-time.After(150 * time.Millisecond):
 	}
 }
 

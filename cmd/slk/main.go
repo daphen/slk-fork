@@ -3222,6 +3222,11 @@ func mostRecentlyVisitedChannel(visits map[string]int64) string {
 	return bestID
 }
 
+// messageNotifier is the subset of *notify.Notifier that OnMessage uses.
+type messageNotifier interface {
+	Notify(key, title, body string) error
+}
+
 // rtmEventHandler bridges WebSocket events into bubbletea messages via p.Send()
 // and caches all incoming messages to the SQLite database.
 type rtmEventHandler struct {
@@ -3233,8 +3238,9 @@ type rtmEventHandler struct {
 	connected   bool
 	isActive    func() bool
 
-	// Notifications
-	notifier        *notify.Notifier
+	// Notifications. notifier is an interface so tests can observe dispatch;
+	// *notify.Notifier is the production implementation.
+	notifier        messageNotifier
 	notifyCfg       config.Notifications
 	currentUserID   string
 	mySubteams      map[string]bool
@@ -3311,8 +3317,10 @@ func (h *rtmEventHandler) OnMessage(channelID, userID, ts, text, threadTS, subty
 
 	// Check if this message should trigger a desktop notification.
 	// Do this before the active workspace check so inactive workspaces
-	// can still trigger notifications.
-	if h.notifier != nil && h.notifyCfg.Enabled {
+	// can still trigger notifications. Edits (message_changed) show no new
+	// message in the channel — bots like Swarmia edit in place — so skip
+	// them or every status update re-fires a notification.
+	if h.notifier != nil && h.notifyCfg.Enabled && subtype != "message_changed" && !edited {
 		isActiveWS := h.isActive != nil && h.isActive()
 		activeChID := ""
 		if h.activeChannelID != nil {
